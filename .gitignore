@@ -1,0 +1,21 @@
+# Build directories
+build/
+build-*/
+bin/
+lib/
+*.exe
+*.a
+*.lib
+*.obj
+*.o
+*.cubin
+
+# IDE and Editor artifacts
+.vscode/
+.idea/
+compile_commands.json
+*.log
+
+# Scratch and temporary files
+scratch/
+*.tmp
