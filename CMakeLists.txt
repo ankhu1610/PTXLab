@@ -31,8 +31,19 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 # -------------------------------------------------------------
 add_library(ptxlab_support STATIC
     src/support/version.cpp
+    src/support/source_manager.cpp
+    src/support/diagnostic.cpp
 )
 target_include_directories(ptxlab_support PUBLIC ${PROJECT_SOURCE_DIR}/include)
+
+# -------------------------------------------------------------
+# KC Front-End Library (ptxlab_kc)
+# -------------------------------------------------------------
+add_library(ptxlab_kc STATIC
+    src/kc/lexer.cpp
+)
+target_include_directories(ptxlab_kc PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(ptxlab_kc PUBLIC ptxlab_support)
 
 # -------------------------------------------------------------
 # Compiler Executable (kcc)
@@ -40,7 +51,7 @@ target_include_directories(ptxlab_support PUBLIC ${PROJECT_SOURCE_DIR}/include)
 add_executable(kcc
     src/tools/kcc.cpp
 )
-target_link_libraries(kcc PRIVATE ptxlab_support)
+target_link_libraries(kcc PRIVATE ptxlab_kc ptxlab_support)
 
 # -------------------------------------------------------------
 # Testing: GoogleTest integration via FetchContent
@@ -59,8 +70,11 @@ FetchContent_MakeAvailable(googletest)
 
 add_executable(unit_tests
     tests/unit/test_smoke.cpp
+    tests/unit/test_source_manager.cpp
+    tests/unit/test_diagnostic.cpp
+    tests/unit/test_lexer.cpp
 )
-target_link_libraries(unit_tests PRIVATE ptxlab_support GTest::gtest_main)
+target_link_libraries(unit_tests PRIVATE ptxlab_kc ptxlab_support GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(unit_tests)

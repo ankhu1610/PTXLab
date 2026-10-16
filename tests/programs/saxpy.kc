@@ -1,0 +1,7 @@
+// SAXPY: Single-Precision A*X Plus Y Kernel in KC
+kernel saxpy(i32 n, f32 a, f32* x, f32* y) {
+    i32 tid = tid_x();
+    if (tid < n) {
+        y[tid] = a * x[tid] + y[tid];
+    }
+}
