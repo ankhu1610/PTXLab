@@ -1,7 +1,7 @@
 # PTXLab Project Status Ledger
 
 Last Updated: 2026-10-16  
-Current Milestone: **M2 — Parser, AST, and gate-lab (LL(1)/FIRST/FOLLOW)** (In Progress)  
+Current Milestone: **M2 — Parser, AST, and gate-lab (LL(1)/FIRST/FOLLOW)** (Completed; Explain-Back Gate) -> **M3 Next**  
 Platform: **Native Windows (MinGW-w64 UCRT GCC 16.2 / Clang 23.1 + CMake 4.4 + Ninja 1.13)**
 
 ---
@@ -26,8 +26,8 @@ Platform: **Native Windows (MinGW-w64 UCRT GCC 16.2 / Clang 23.1 + CMake 4.4 + N
 |---|---|---|---|
 | **M0** | Environment, toolchain audit, CMake/GTest skeleton | **COMPLETED** | CMake 4.4 + Ninja + GCC 16.2 builds `kcc.exe` & `unit_tests.exe`; CTest 2/2 Passed (100%); Concept questions verified |
 | **M1** | Diagnostics & Lexer | **COMPLETED** | SourceManager + DiagnosticEngine + DFA Lexer; 39/39 CTest passed (100%); `kcc --dump-tokens` verified on `saxpy.kc` |
-| **M2** | Parser, AST, and gate-lab (LL(1)/FIRST/FOLLOW) | Next | Recursive descent parser, AST nodes, panic mode recovery, gate-lab FIRST/FOLLOW tool |
-| **M3** | Sema & AST Reference Interpreter (O1) | Pending | — |
+| **M2** | Parser, AST, and gate-lab (LL(1)/FIRST/FOLLOW) | **COMPLETED** | Recursive descent parser + AST printer + panic mode recovery + gate-lab FIRST/FOLLOW/LL(1) tool; 57/57 CTest passed (100%); `kcc --dump-ast` verified |
+| **M3** | Sema & AST Reference Interpreter (O1) | Next | Scoped symbol table, type checking, mandatory initializer checks, AST reference interpreter with UB traps |
 | **M4** | Typed TAC IR, CFG, Verifier & IR Interpreter (O2) | Pending | — |
 | **M5** | PTX Emitter & ptxas validation | Pending | — |
 | **M6** | GPU Runner (O4) via CUDA Driver API | Pending | — |

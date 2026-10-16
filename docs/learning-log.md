@@ -71,4 +71,40 @@
 * **$O(\log L)$ Binary Search Lookup:** Precomputing a single `std::vector<size_t>` of newline byte offsets during initialization takes $O(N)$ once. Thereafter, any byte offset can be translated to 1-based `line:column` in $O(\log L)$ time (where $L$ is number of lines) using `std::upper_bound`.
 * **Industry Standard Architecture:** This matches the design of production compiler front ends (such as LLVM/Clang's `SourceManager` and Rust's `SourceMap`), allowing tokens and AST nodes to store lightweight offsets while deferring line/column formatting until diagnostics or debug tables are generated.
 
+---
+
+## Milestone 2: Parser, AST, and gate-lab (LL(1)/FIRST/FOLLOW)
+
+### Concept Questions & Justifications
+
+#### Question 1 (LL(1) Grammars & Dangling-Else Conflict):
+> For the conditional grammar:
+> ```
+> S  -> if E then S S' | a
+> S' -> else S | ε
+> ```
+> 1. Compute `FIRST(S)`, `FIRST(S')`, `FOLLOW(S)`, and `FOLLOW(S')`.
+> 2. Why does the LL(1) parse table have a multiple-definition conflict at entry `M[S', else]`?
+> 3. How does `gate-lab` detect and report this conflict, and how does our handwritten recursive-descent parser resolve the ambiguity in practice?
+
+*Candidate Explanation & Justification:*
+* *[Pending human explain-back answer]*
+
+---
+
+#### Question 2 (Recursive-Descent Precedence Climbing & Associativity):
+> How does precedence climbing (such as our `parseExpr(minPrec)` implementation) avoid the infinite recursion pitfall of standard left-recursive expression grammars (`E -> E + T | T`), while guaranteeing mathematically correct precedence (`*` over `+`) and left-associativity (`a - b - c` as `(a - b) - c`)?
+
+*Candidate Explanation & Justification:*
+* *[Pending human explain-back answer]*
+
+---
+
+#### Question 3 (Panic-Mode Error Recovery & Synchronization Sets):
+> In our recursive-descent parser, what tokens are chosen as synchronizing tokens in `Parser::synchronize()`, and why? What would happen to compiler behavior if the parser simply skipped a single character, or conversely, aborted parsing upon the first error?
+
+*Candidate Explanation & Justification:*
+* *[Pending human explain-back answer]*
+
+
 

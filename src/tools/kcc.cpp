@@ -3,7 +3,9 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include "ptxlab/kc/ast_printer.h"
 #include "ptxlab/kc/lexer.h"
+#include "ptxlab/kc/parser.h"
 #include "ptxlab/support/diagnostic.h"
 #include "ptxlab/support/source_manager.h"
 #include "ptxlab/version.h"
@@ -30,6 +32,7 @@ int main(int argc, char* argv[]) {
     }
 
     bool dumpTokens = false;
+    bool dumpAst = false;
     std::string inputFile;
 
     for (size_t i = 0; i < args.size(); ++i) {
@@ -45,6 +48,8 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (arg == "--dump-tokens") {
             dumpTokens = true;
+        } else if (arg == "--dump-ast") {
+            dumpAst = true;
         } else if (!arg.empty() && arg[0] == '-') {
             std::cerr << "kcc: error: unrecognized command-line option '" << arg << "'\n";
             return 1;
@@ -103,6 +108,23 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    std::cerr << "kcc: error: compilation beyond tokenization will be enabled in Milestone 2\n";
+    if (dumpAst) {
+        ptxlab::Parser parser(lexer, sourceMgr, diagEngine);
+        auto program = parser.parseProgram();
+
+        if (diagEngine.hasErrors()) {
+            for (const auto& diag : diagEngine.getDiagnostics()) {
+                std::cerr << diagEngine.format(diag, sourceMgr);
+            }
+            return 1;
+        }
+
+        if (program) {
+            std::cout << ptxlab::ASTPrinter::dump(*program);
+        }
+        return 0;
+    }
+
+    std::cerr << "kcc: error: compilation beyond AST will be enabled in Milestone 3\n";
     return 1;
 }

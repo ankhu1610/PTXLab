@@ -41,9 +41,25 @@ target_include_directories(ptxlab_support PUBLIC ${PROJECT_SOURCE_DIR}/include)
 # -------------------------------------------------------------
 add_library(ptxlab_kc STATIC
     src/kc/lexer.cpp
+    src/kc/ast_printer.cpp
+    src/kc/parser.cpp
 )
 target_include_directories(ptxlab_kc PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(ptxlab_kc PUBLIC ptxlab_support)
+
+# -------------------------------------------------------------
+# GATE Laboratory Library & Executable (gate-lab)
+# -------------------------------------------------------------
+add_library(ptxlab_gate STATIC
+    tools/gate-lab/first_follow.cpp
+    tools/gate-lab/ll1_table.cpp
+)
+target_include_directories(ptxlab_gate PUBLIC ${PROJECT_SOURCE_DIR}/tools/gate-lab)
+
+add_executable(gate-lab
+    tools/gate-lab/main.cpp
+)
+target_link_libraries(gate-lab PRIVATE ptxlab_gate)
 
 # -------------------------------------------------------------
 # Compiler Executable (kcc)
@@ -73,8 +89,11 @@ add_executable(unit_tests
     tests/unit/test_source_manager.cpp
     tests/unit/test_diagnostic.cpp
     tests/unit/test_lexer.cpp
+    tests/unit/test_ast.cpp
+    tests/unit/test_parser.cpp
+    tests/unit/test_gate_lab.cpp
 )
-target_link_libraries(unit_tests PRIVATE ptxlab_kc ptxlab_support GTest::gtest_main)
+target_link_libraries(unit_tests PRIVATE ptxlab_kc ptxlab_support ptxlab_gate GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(unit_tests)
