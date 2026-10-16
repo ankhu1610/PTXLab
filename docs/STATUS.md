@@ -1,7 +1,7 @@
 # PTXLab Project Status Ledger
 
 Last Updated: 2026-10-16  
-Current Milestone: **M1 — Diagnostics & Lexer** (In Progress)  
+Current Milestone: **M2 — Parser, AST, and gate-lab (LL(1)/FIRST/FOLLOW)** (In Progress)  
 Platform: **Native Windows (MinGW-w64 UCRT GCC 16.2 / Clang 23.1 + CMake 4.4 + Ninja 1.13)**
 
 ---

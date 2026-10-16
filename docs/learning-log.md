@@ -44,7 +44,9 @@
 > In our lexer, why do identifiers and keywords share the same DFA transition state (`[a-zA-Z_][a-zA-Z0-9_]*`) followed by a keyword table lookup, rather than creating separate DFA branches for every keyword (`k-e-r-n-e-l`, `i-3-2`, etc.)?
 
 *Candidate Explanation & Justification:*
-(Awaiting human input)
+* **Identical Lexical Structure:** Identifiers and keywords share the exact same character syntax: starting with a letter or underscore, followed by letters, digits, or underscores (`[a-zA-Z_][a-zA-Z0-9_]*`). Clubbing all contiguous alphanumeric characters into a single lexeme first is natural and uniform.
+* **Preventing DFA State Explosion:** If the DFA created separate transition paths for each keyword (`k -> e -> r -> n -> e -> l`, `i -> 3 -> 2`, etc.), the number of states and transition table size would grow linearly with the number of keywords. Furthermore, handling identifiers that share prefixes with keywords (e.g., `kernel_id` or `i32_val`) would require complex lookahead, branching, and backtracking logic.
+* **Separation of Concerns ($O(1)$ Hash Table):** Consolidating the scanning loop into a single identifier DFA and following it with an $O(1)$ keyword hash lookup keeps the scanner compact, cache-friendly, and trivial to extend with new keywords without touching the core state machine.
 
 ---
 
@@ -52,7 +54,12 @@
 > What is the Principle of Maximal Munch (Longest Match)? Why is it required when scanning operators like `<<`, `<=`, and `==`, and how does the lexer resolve `<<<`?
 
 *Candidate Explanation & Justification:*
-(Awaiting human input)
+* **Definition of Maximal Munch (Longest Match):** When multiple valid token prefixes can match the current input stream, the lexer greedily chooses the transition sequence that consumes the maximum number of characters yielding a valid token.
+* **Why It Is Required:** Without Maximal Munch, character sequences like `<=` would be ambiguous (could be lexed as `<` followed by `=` or as `<=`). Maximal Munch resolves this deterministically by prioritizing the multi-character operator `<=` (`LessEqual`).
+* **Resolution of `<<<`:**
+  1. Starting at the first `<`, the lexer sees the second `<` and forms `<<` (`LessLess`, length 2), which is the longest valid token starting at offset 0.
+  2. The next iteration starts at the remaining `<` and produces `<` (`Less`, length 1).
+  3. Thus, `<<<` is deterministically tokenized as `[LessLess, Less]`. (This was verified by unit test `LexerTest.MaximalMunchDisambiguation`).
 
 ---
 
@@ -60,5 +67,8 @@
 > Why does `SourceManager` precompute a line-offset table `std::vector<size_t>` to perform binary search ($O(\log N)$) on byte offsets for diagnostics, rather than re-scanning from index 0 or incrementing line/col counters on the fly?
 
 *Candidate Explanation & Justification:*
-(Awaiting human input)
+* **Avoiding $O(N)$ Re-scans:** Re-scanning the source file from byte offset 0 every time a diagnostic or error is emitted costs $O(N)$ character inspections per error. For large programs or hundreds of diagnostics, repeated linear scans would degrade compiler performance to $O(K \times N)$.
+* **$O(\log L)$ Binary Search Lookup:** Precomputing a single `std::vector<size_t>` of newline byte offsets during initialization takes $O(N)$ once. Thereafter, any byte offset can be translated to 1-based `line:column` in $O(\log L)$ time (where $L$ is number of lines) using `std::upper_bound`.
+* **Industry Standard Architecture:** This matches the design of production compiler front ends (such as LLVM/Clang's `SourceManager` and Rust's `SourceMap`), allowing tokens and AST nodes to store lightweight offsets while deferring line/column formatting until diagnostics or debug tables are generated.
+
 
