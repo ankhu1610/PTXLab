@@ -390,7 +390,7 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
     if (match(TokenKind::KwFalse)) {
         return std::make_unique<BoolLiteralExpr>(previous_.location, false);
     }
-    if (match(TokenKind::Identifier)) {
+    if (matchOneOf(TokenKind::Identifier, TokenKind::KwI32, TokenKind::KwF32, TokenKind::KwBool)) {
         Token idTok = previous_;
         if (match(TokenKind::LParen)) {
             // Function call / builtin / type cast
@@ -406,7 +406,11 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
             consume(TokenKind::RParen, "expected ')' after argument list");
             return std::make_unique<CallExpr>(idTok.location, std::string(idTok.text), std::move(args));
         }
-        return std::make_unique<IdentifierExpr>(idTok.location, std::string(idTok.text));
+        if (idTok.is(TokenKind::Identifier)) {
+            return std::make_unique<IdentifierExpr>(idTok.location, std::string(idTok.text));
+        }
+        diag_.error(idTok.location, "expected '(' after type conversion keyword");
+        return nullptr;
     }
     if (match(TokenKind::LParen)) {
         auto expr = parseExpr();

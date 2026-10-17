@@ -86,12 +86,20 @@ private:
 class Expr : public ASTNode {
 public:
     using ASTNode::ASTNode;
+
+    [[nodiscard]] const Type& type() const noexcept { return type_; }
+    void setType(const Type& t) noexcept { type_ = t; }
+
+private:
+    Type type_{PrimitiveType::Void, false};
 };
 
 class IntLiteralExpr : public Expr {
 public:
     IntLiteralExpr(SourceLocation loc, int32_t value)
-        : Expr(loc), value_(value) {}
+        : Expr(loc), value_(value) {
+        setType(Type::getI32());
+    }
 
     [[nodiscard]] int32_t value() const noexcept { return value_; }
     void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
@@ -103,7 +111,9 @@ private:
 class FloatLiteralExpr : public Expr {
 public:
     FloatLiteralExpr(SourceLocation loc, float value)
-        : Expr(loc), value_(value) {}
+        : Expr(loc), value_(value) {
+        setType(Type::getF32());
+    }
 
     [[nodiscard]] float value() const noexcept { return value_; }
     void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
@@ -115,7 +125,9 @@ private:
 class BoolLiteralExpr : public Expr {
 public:
     BoolLiteralExpr(SourceLocation loc, bool value)
-        : Expr(loc), value_(value) {}
+        : Expr(loc), value_(value) {
+        setType(Type::getBool());
+    }
 
     [[nodiscard]] bool value() const noexcept { return value_; }
     void accept(ASTVisitor& visitor) override { visitor.visit(*this); }

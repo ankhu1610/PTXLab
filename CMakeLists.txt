@@ -43,6 +43,8 @@ add_library(ptxlab_kc STATIC
     src/kc/lexer.cpp
     src/kc/ast_printer.cpp
     src/kc/parser.cpp
+    src/kc/sema.cpp
+    src/kc/ast_interpreter.cpp
 )
 target_include_directories(ptxlab_kc PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(ptxlab_kc PUBLIC ptxlab_support)
@@ -92,6 +94,8 @@ add_executable(unit_tests
     tests/unit/test_ast.cpp
     tests/unit/test_parser.cpp
     tests/unit/test_gate_lab.cpp
+    tests/unit/test_sema.cpp
+    tests/unit/test_ast_interpreter.cpp
 )
 target_link_libraries(unit_tests PRIVATE ptxlab_kc ptxlab_support ptxlab_gate GTest::gtest_main)
 
