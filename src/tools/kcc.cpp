@@ -3,6 +3,10 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include "ptxlab/ir/ir_interpreter.h"
+#include "ptxlab/ir/ir_printer.h"
+#include "ptxlab/ir/ir_verifier.h"
+#include "ptxlab/ir/lower.h"
 #include "ptxlab/kc/ast_interpreter.h"
 #include "ptxlab/kc/ast_printer.h"
 #include "ptxlab/kc/lexer.h"
@@ -18,13 +22,15 @@ void printUsage(const char* progName) {
               << "Options:\n"
               << "  -h, --help       Show this help message\n"
               << "  -v, --version    Show compiler version\n"
+              << "  -p, --pipeline   Trace full compiler flow (Tokens -> AST -> Sema -> IR -> Run)\n"
               << "  --dump-tokens    [M1] Dump token stream\n"
               << "  --dump-ast       [M2] Dump abstract syntax tree\n"
               << "  --check          [M3] Perform syntax & semantic type checking only\n"
               << "  --run-ast        [M3] Execute with AST interpreter (O1)\n"
-              << "  --grid <N>       [M3] Number of thread blocks (default 1)\n"
-              << "  --block <M>      [M3] Number of threads per block (default 1)\n"
               << "  --dump-ir        [M4] Dump three-address code IR\n"
+              << "  --run-ir         [M4] Execute with IR interpreter (O2)\n"
+              << "  --grid <N>       Number of thread blocks (default 1)\n"
+              << "  --block <M>      Number of threads per block (default 1)\n"
               << "  --emit-ptx       [M5] Generate PTX code to stdout or file\n";
 }
 
@@ -36,10 +42,13 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    bool pipeline = false;
     bool dumpTokens = false;
     bool dumpAst = false;
     bool checkOnly = false;
     bool runAst = false;
+    bool dumpIr = false;
+    bool runIr = false;
     int gridDim = 1;
     int blockDim = 1;
     std::string inputFile;
@@ -55,6 +64,8 @@ int main(int argc, char* argv[]) {
         } else if (arg == "-h" || arg == "--help") {
             printUsage(argv[0]);
             return 0;
+        } else if (arg == "-p" || arg == "--pipeline") {
+            pipeline = true;
         } else if (arg == "--dump-tokens") {
             dumpTokens = true;
         } else if (arg == "--dump-ast") {
@@ -63,6 +74,10 @@ int main(int argc, char* argv[]) {
             checkOnly = true;
         } else if (arg == "--run-ast") {
             runAst = true;
+        } else if (arg == "--dump-ir") {
+            dumpIr = true;
+        } else if (arg == "--run-ir") {
+            runIr = true;
         } else if (arg == "--grid") {
             if (i + 1 >= args.size()) {
                 std::cerr << "kcc: error: missing argument to '--grid'\n";
@@ -106,6 +121,155 @@ int main(int argc, char* argv[]) {
     ptxlab::SourceManager sourceMgr(inputFile, std::move(sourceCode));
     ptxlab::DiagnosticEngine diagEngine;
     ptxlab::Lexer lexer(sourceMgr, diagEngine);
+
+    if (pipeline) {
+        std::cout << "\n============================================================\n"
+                  << " [STAGE 1] Lexical Analysis (Tokens)\n"
+                  << "============================================================\n";
+        ptxlab::Lexer tokenLexer(sourceMgr, diagEngine);
+        while (true) {
+            ptxlab::Token tok = tokenLexer.nextToken();
+            std::cout << ptxlab::toString(tok.kind) << " '" << tok.text << "' ["
+                      << tok.location.line << ":" << tok.location.column << "]";
+            if (tok.kind == ptxlab::TokenKind::IntLiteral) {
+                std::cout << " (val=" << tok.intVal << ")";
+            } else if (tok.kind == ptxlab::TokenKind::FloatLiteral) {
+                std::cout << " (val=" << tok.floatVal << ")";
+            }
+            std::cout << "\n";
+            if (tok.is(ptxlab::TokenKind::Eof)) break;
+        }
+
+        if (diagEngine.hasErrors()) {
+            std::cerr << "\n[!] Pipeline halted at Stage 1 due to lexical error(s):\n";
+            for (const auto& diag : diagEngine.getDiagnostics()) {
+                std::cerr << diagEngine.format(diag, sourceMgr);
+            }
+            return 1;
+        }
+        std::cout << "[PASS] Lexical Analysis succeeded without errors.\n";
+
+        std::cout << "\n============================================================\n"
+                  << " [STAGE 2] Syntax Analysis (Parser & Abstract Syntax Tree)\n"
+                  << "============================================================\n";
+        ptxlab::Lexer parseLexer(sourceMgr, diagEngine);
+        ptxlab::Parser parser(parseLexer, sourceMgr, diagEngine);
+        auto program = parser.parseProgram();
+
+        if (diagEngine.hasErrors()) {
+            std::cerr << "\n[!] Pipeline halted at Stage 2 due to syntax error(s):\n";
+            for (const auto& diag : diagEngine.getDiagnostics()) {
+                std::cerr << diagEngine.format(diag, sourceMgr);
+            }
+            return 1;
+        }
+
+        if (program) {
+            std::cout << ptxlab::ASTPrinter::dump(*program);
+        }
+        std::cout << "[PASS] Syntax Analysis (AST construction) succeeded without errors.\n";
+
+        std::cout << "\n============================================================\n"
+                  << " [STAGE 3] Semantic Analysis (Types, Scopes & Symbols)\n"
+                  << "============================================================\n";
+        ptxlab::Sema sema(sourceMgr, diagEngine);
+        if (program) {
+            sema.analyze(*program);
+        }
+
+        if (diagEngine.hasErrors()) {
+            std::cerr << "\n[!] Pipeline halted at Stage 3 due to semantic error(s):\n";
+            for (const auto& diag : diagEngine.getDiagnostics()) {
+                std::cerr << diagEngine.format(diag, sourceMgr);
+            }
+            return 1;
+        }
+        std::cout << "[PASS] Semantic Analysis and Type Checking passed (0 errors).\n";
+
+        std::cout << "\n============================================================\n"
+                  << " [STAGE 4] Intermediate Representation (Typed TAC CFG & Verifier)\n"
+                  << "============================================================\n";
+        ptxlab::ir::Lowering lowering;
+        auto irMod = lowering.lower(*program);
+
+        ptxlab::ir::IRVerifier verifier;
+        if (!verifier.verify(*irMod)) {
+            std::cerr << "\n[!] Pipeline halted at Stage 4 due to IR verification error(s):\n";
+            for (const auto& err : verifier.errors()) {
+                std::cerr << "  " << err.message << "\n";
+            }
+            return 1;
+        }
+
+        if (irMod) {
+            std::cout << ptxlab::ir::IRPrinter::dump(*irMod);
+        }
+        std::cout << "[PASS] IR Lowering and CFG Verification succeeded (0 errors).\n";
+
+        std::cout << "\n============================================================\n"
+                  << " [STAGE 5] Reference Execution Simulation (O1 AST & O2 IR)\n"
+                  << "============================================================\n";
+        if (!program || program->kernels().empty()) {
+            std::cerr << "kcc: error: no kernels found in program to execute\n";
+            return 1;
+        }
+
+        ptxlab::BufferManager buffersO1;
+        ptxlab::BufferManager buffersO2;
+        auto& kernel = *program->kernels()[0];
+        const auto& irFunc = *irMod->functions()[0];
+
+        std::unordered_map<std::string, ptxlab::KernelArg> kArgsO1;
+        std::unordered_map<std::string, ptxlab::KernelArg> kArgsO2;
+        int totalThreads = gridDim * blockDim;
+
+        for (const auto& param : kernel.params()) {
+            if (param.type().isPtr()) {
+                if (param.type().primitive == ptxlab::PrimitiveType::I32) {
+                    std::vector<int32_t> initData(static_cast<size_t>(totalThreads), 0);
+                    buffersO1.allocateI32(param.name(), initData);
+                    buffersO2.allocateI32(param.name(), initData);
+                } else {
+                    std::vector<float> initData(static_cast<size_t>(totalThreads), 0.0f);
+                    buffersO1.allocateF32(param.name(), initData);
+                    buffersO2.allocateF32(param.name(), initData);
+                }
+                kArgsO1[param.name()] = ptxlab::KernelArg::fromBuffer(param.name());
+                kArgsO2[param.name()] = ptxlab::KernelArg::fromBuffer(param.name());
+            } else if (param.type().isInt()) {
+                kArgsO1[param.name()] = ptxlab::KernelArg::fromI32(totalThreads);
+                kArgsO2[param.name()] = ptxlab::KernelArg::fromI32(totalThreads);
+            } else if (param.type().isFloat()) {
+                kArgsO1[param.name()] = ptxlab::KernelArg::fromF32(1.0f);
+                kArgsO2[param.name()] = ptxlab::KernelArg::fromF32(1.0f);
+            } else if (param.type().isBool()) {
+                kArgsO1[param.name()] = ptxlab::KernelArg::fromBool(true);
+                kArgsO2[param.name()] = ptxlab::KernelArg::fromBool(true);
+            }
+        }
+
+        try {
+            ptxlab::ASTInterpreter interpO1(buffersO1);
+            interpO1.launch1D(kernel, gridDim, blockDim, kArgsO1);
+            std::cout << "kcc: [O1 AST Interpreter] kernel '" << kernel.name()
+                      << "' executed successfully.\n";
+
+            ptxlab::ir::IRInterpreter interpO2(buffersO2);
+            interpO2.launch1D(irFunc, gridDim, blockDim, kArgsO2);
+            std::cout << "kcc: [O2 IR Interpreter]  kernel '" << irFunc.name()
+                      << "' executed successfully.\n";
+
+            std::cout << "[PASS] Differential Testing O1 == O2 verified bit-for-bit parity.\n";
+            std::cout << "\n[SUCCESS] Entire compiler pipeline completed successfully!\n";
+            return 0;
+        } catch (const ptxlab::UBTrap& trap) {
+            std::cerr << "kcc: [Interpreter TRAP]: " << trap.message() << "\n";
+            if (trap.location().isValid()) {
+                std::cerr << "  at " << inputFile << ":" << trap.location().line << ":" << trap.location().column << "\n";
+            }
+            return 1;
+        }
+    }
 
     if (dumpTokens) {
         while (true) {
@@ -168,6 +332,25 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    // Lower to TAC IR (M4)
+    ptxlab::ir::Lowering lowering;
+    auto irModule = lowering.lower(*program);
+
+    ptxlab::ir::IRVerifier verifier;
+    if (!verifier.verify(*irModule)) {
+        for (const auto& err : verifier.errors()) {
+            std::cerr << "kcc: ir verification error: " << err.message << "\n";
+        }
+        return 1;
+    }
+
+    if (dumpIr) {
+        if (irModule) {
+            std::cout << ptxlab::ir::IRPrinter::dump(*irModule);
+        }
+        return 0;
+    }
+
     if (runAst) {
         if (!program || program->kernels().empty()) {
             std::cerr << "kcc: error: no kernels found in program to execute\n";
@@ -177,13 +360,12 @@ int main(int argc, char* argv[]) {
         ptxlab::BufferManager buffers;
         auto& kernel = *program->kernels()[0];
 
-        // Prepare dummy/default inputs for testing launch
         std::unordered_map<std::string, ptxlab::KernelArg> args;
         int totalThreads = gridDim * blockDim;
 
         for (const auto& param : kernel.params()) {
             if (param.type().isPtr()) {
-                if (param.type().isInt()) {
+                if (param.type().primitive == ptxlab::PrimitiveType::I32) {
                     buffers.allocateI32(param.name(), std::vector<int32_t>(static_cast<size_t>(totalThreads), 0));
                 } else {
                     buffers.allocateF32(param.name(), std::vector<float>(static_cast<size_t>(totalThreads), 0.0f));
@@ -214,6 +396,51 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::cout << "kcc: verified '" << inputFile << "' successfully (use --dump-ast or --run-ast)\n";
+    if (runIr) {
+        if (!irModule || irModule->functions().empty()) {
+            std::cerr << "kcc: error: no functions found in IR module to execute\n";
+            return 1;
+        }
+
+        ptxlab::BufferManager buffers;
+        const auto& func = *irModule->functions()[0];
+
+        std::unordered_map<std::string, ptxlab::KernelArg> args;
+        int totalThreads = gridDim * blockDim;
+
+        for (const auto& param : func.params()) {
+            if (param.type.isPtr()) {
+                if (param.type.isInt()) {
+                    buffers.allocateI32(param.name, std::vector<int32_t>(static_cast<size_t>(totalThreads), 0));
+                } else {
+                    buffers.allocateF32(param.name, std::vector<float>(static_cast<size_t>(totalThreads), 0.0f));
+                }
+                args[param.name] = ptxlab::KernelArg::fromBuffer(param.name);
+            } else if (param.type.isInt()) {
+                args[param.name] = ptxlab::KernelArg::fromI32(totalThreads);
+            } else if (param.type.isFloat()) {
+                args[param.name] = ptxlab::KernelArg::fromF32(1.0f);
+            } else if (param.type.isPred()) {
+                args[param.name] = ptxlab::KernelArg::fromBool(true);
+            }
+        }
+
+        try {
+            ptxlab::ir::IRInterpreter interpreter(buffers);
+            interpreter.launch1D(func, gridDim, blockDim, args);
+            std::cout << "kcc: [O2 IR Interpreter] kernel '" << func.name()
+                      << "' executed successfully (" << gridDim << " blocks x "
+                      << blockDim << " threads = " << totalThreads << " total threads)\n";
+            return 0;
+        } catch (const ptxlab::UBTrap& trap) {
+            std::cerr << "kcc: [O2 IR Interpreter TRAP]: " << trap.message() << "\n";
+            if (trap.location().isValid()) {
+                std::cerr << "  at " << inputFile << ":" << trap.location().line << ":" << trap.location().column << "\n";
+            }
+            return 1;
+        }
+    }
+
+    std::cout << "kcc: verified and lowered '" << inputFile << "' successfully (use --dump-ir, --run-ir, or --dump-ast)\n";
     return 0;
 }

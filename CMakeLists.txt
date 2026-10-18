@@ -64,12 +64,27 @@ add_executable(gate-lab
 target_link_libraries(gate-lab PRIVATE ptxlab_gate)
 
 # -------------------------------------------------------------
+# KC IR Library (ptxlab_ir)
+# -------------------------------------------------------------
+add_library(ptxlab_ir STATIC
+    src/ir/instruction.cpp
+    src/ir/function.cpp
+    src/ir/ir_builder.cpp
+    src/ir/ir_printer.cpp
+    src/ir/lower.cpp
+    src/ir/ir_verifier.cpp
+    src/ir/ir_interpreter.cpp
+)
+target_include_directories(ptxlab_ir PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(ptxlab_ir PUBLIC ptxlab_kc ptxlab_support)
+
+# -------------------------------------------------------------
 # Compiler Executable (kcc)
 # -------------------------------------------------------------
 add_executable(kcc
     src/tools/kcc.cpp
 )
-target_link_libraries(kcc PRIVATE ptxlab_kc ptxlab_support)
+target_link_libraries(kcc PRIVATE ptxlab_ir ptxlab_kc ptxlab_support)
 
 # -------------------------------------------------------------
 # Testing: GoogleTest integration via FetchContent
@@ -96,8 +111,12 @@ add_executable(unit_tests
     tests/unit/test_gate_lab.cpp
     tests/unit/test_sema.cpp
     tests/unit/test_ast_interpreter.cpp
+    tests/unit/test_ir.cpp
+    tests/unit/test_lower.cpp
+    tests/unit/test_ir_verifier.cpp
+    tests/unit/test_ir_interpreter.cpp
 )
-target_link_libraries(unit_tests PRIVATE ptxlab_kc ptxlab_support ptxlab_gate GTest::gtest_main)
+target_link_libraries(unit_tests PRIVATE ptxlab_ir ptxlab_kc ptxlab_support ptxlab_gate GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(unit_tests)

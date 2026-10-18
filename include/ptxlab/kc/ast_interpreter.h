@@ -36,6 +36,7 @@ struct Value {
     float f32 = 0.0f;
     bool b = false;
     std::string ptrBuffer;
+    int32_t ptrOffset = 0;
 
     [[nodiscard]] static Value makeI32(int32_t v) {
         Value val; val.kind = Kind::I32; val.i32 = v; return val;
@@ -46,8 +47,8 @@ struct Value {
     [[nodiscard]] static Value makeBool(bool v) {
         Value val; val.kind = Kind::Bool; val.b = v; return val;
     }
-    [[nodiscard]] static Value makePtr(std::string bufferName) {
-        Value val; val.kind = Kind::Ptr; val.ptrBuffer = std::move(bufferName); return val;
+    [[nodiscard]] static Value makePtr(std::string bufferName, int32_t offset = 0) {
+        Value val; val.kind = Kind::Ptr; val.ptrBuffer = std::move(bufferName); val.ptrOffset = offset; return val;
     }
 };
 

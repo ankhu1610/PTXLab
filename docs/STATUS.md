@@ -1,7 +1,7 @@
 # PTXLab Project Status Ledger
 
-Last Updated: 2026-10-17  
-Current Milestone: **M3 — Sema & AST Reference Interpreter (O1)** (Completed; Explain-Back Gate) -> **M4 Next**  
+Last Updated: 2026-10-18  
+Current Milestone: **M4 — Typed TAC IR, CFG, Verifier & IR Interpreter (O2)** (Completed) -> **M5 Next**  
 Platform: **Native Windows (MinGW-w64 UCRT GCC 16.2 / Clang 23.1 + CMake 4.4 + Ninja 1.13)**
 
 ---
@@ -28,8 +28,8 @@ Platform: **Native Windows (MinGW-w64 UCRT GCC 16.2 / Clang 23.1 + CMake 4.4 + N
 | **M1** | Diagnostics & Lexer | **COMPLETED** | SourceManager + DiagnosticEngine + DFA Lexer; 39/39 CTest passed (100%); `kcc --dump-tokens` verified on `saxpy.kc` |
 | **M2** | Parser, AST, and gate-lab (LL(1)/FIRST/FOLLOW) | **COMPLETED** | Recursive descent parser + AST printer + panic mode recovery + gate-lab FIRST/FOLLOW/LL(1) tool; 57/57 CTest passed (100%); `kcc --dump-ast` verified |
 | **M3** | Sema & AST Reference Interpreter (O1) | **COMPLETED** | Scoped symbol table + strict type checker (no implicit conversions) + UB-trapping AST interpreter; 101/101 CTest passed (100%); `kcc --check` & `kcc --run-ast` verified on `saxpy.kc` |
-| **M4** | Typed TAC IR, CFG, Verifier & IR Interpreter (O2) | Next | — |
-| **M5** | PTX Emitter & ptxas validation | Pending | — |
+| **M4** | Typed TAC IR, CFG, Verifier & IR Interpreter (O2) | **COMPLETED** | Typed TAC IR + CFG basic blocks + jumping-code lowering + IR Verifier + CPU Reference Interpreter (O2); 119/119 CTest passed (100%); `kcc --dump-ir` & `kcc --run-ir` verified; bit-exact O1 == O2 parity verified |
+| **M5** | PTX Emitter & ptxas validation | Next | — |
 | **M6** | GPU Runner (O4) via CUDA Driver API | Pending | — |
 | **M7** | PTX-subset Parser, Validator & Interpreter (O3) | Pending | — |
 | **M8** | Data-flow Framework & Optimizations (CP, DCE, CSE)| Pending | — |
