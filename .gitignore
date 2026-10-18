@@ -1,4 +1,4 @@
-# Build directories
+# Build directories & outputs
 build/
 build-*/
 bin/
@@ -9,13 +9,26 @@ lib/
 *.obj
 *.o
 *.cubin
+*.ptx
+!tests/ptx_corpus/smoke.ptx
 
-# IDE and Editor artifacts
+# Implementation plans & project roadmaps
+*plan*.md
+*Plan*.md
+plans/
+
+# IDE, Editor & Cache
+.cache/
 .vscode/
 .idea/
 compile_commands.json
 *.log
 
-# Scratch and temporary files
+# Scratch scripts & temporary test files
 scratch/
+test.cpp
+test.*
+tools/check_file.cpp
+tools/lex_file.cpp
 *.tmp
+*.bak
