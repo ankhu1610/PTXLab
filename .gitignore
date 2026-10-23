@@ -3,6 +3,7 @@ build/
 build-*/
 bin/
 lib/
+output/
 *.exe
 *.a
 *.lib

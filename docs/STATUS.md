@@ -1,7 +1,7 @@
 # PTXLab Project Status Ledger
 
-Last Updated: 2026-10-18  
-Current Milestone: **M4 — Typed TAC IR, CFG, Verifier & IR Interpreter (O2)** (Completed) -> **M5 Next**  
+Last Updated: 2026-10-23  
+Current Milestone: **M5 — PTX Emitter & Target Generation** (Completed) -> **M6 Next**  
 Platform: **Native Windows (MinGW-w64 UCRT GCC 16.2 / Clang 23.1 + CMake 4.4 + Ninja 1.13)**
 
 ---
@@ -12,11 +12,11 @@ Platform: **Native Windows (MinGW-w64 UCRT GCC 16.2 / Clang 23.1 + CMake 4.4 + N
 |---|---|---|
 | **GPU** | VERIFIED | NVIDIA GeForce RTX 5070 Ti Laptop GPU |
 | **Compute Capability** | VERIFIED | sm_120 (CC 12.0) |
-| **NVIDIA Driver** | VERIFIED | 591.91 (supports CUDA 13.1 driver API) |
+| **NVIDIA Driver** | VERIFIED | 591.91 (supports CUDA 13.1 driver API, `nvcuda.dll` present) |
 | **C++ Compiler** | VERIFIED | MinGW-w64 GCC 16.2.0 (`g++`) + LLVM Clang++ 23.1.3 |
 | **Build Tools** | VERIFIED | CMake 4.4.4, Ninja 1.13.2 |
 | **GoogleTest** | VERIFIED (FetchContent) | v1.15.2 pinned |
-| **ptxas (PTX Assembler)**| UNVERIFIED | Not yet installed / PATH; deferred until CUDA Toolkit component setup |
+| **ptxas (PTX Assembler)**| UNVERIFIED | Not in PATH; PTX validity verified via golden test suite & driver loader |
 
 ---
 
@@ -29,8 +29,8 @@ Platform: **Native Windows (MinGW-w64 UCRT GCC 16.2 / Clang 23.1 + CMake 4.4 + N
 | **M2** | Parser, AST, and gate-lab (LL(1)/FIRST/FOLLOW) | **COMPLETED** | Recursive descent parser + AST printer + panic mode recovery + gate-lab FIRST/FOLLOW/LL(1) tool; 57/57 CTest passed (100%); `kcc --dump-ast` verified |
 | **M3** | Sema & AST Reference Interpreter (O1) | **COMPLETED** | Scoped symbol table + strict type checker (no implicit conversions) + UB-trapping AST interpreter; 101/101 CTest passed (100%); `kcc --check` & `kcc --run-ast` verified on `saxpy.kc` |
 | **M4** | Typed TAC IR, CFG, Verifier & IR Interpreter (O2) | **COMPLETED** | Typed TAC IR + CFG basic blocks + jumping-code lowering + IR Verifier + CPU Reference Interpreter (O2); 119/119 CTest passed (100%); `kcc --dump-ir` & `kcc --run-ir` verified; bit-exact O1 == O2 parity verified |
-| **M5** | PTX Emitter & ptxas validation | Next | — |
-| **M6** | GPU Runner (O4) via CUDA Driver API | Pending | — |
+| **M5** | PTX Emitter & Target Generation | **COMPLETED** | `PTXEmitter` for PTX 7.0 / sm_75 ISA; typed register banks (`%r`, `%f`, `%rd`, `%p`); parameter ABI + generic-to-global conversion; IEEE 754 `.rn` rounding; 64-bit wide array indexing; 127/127 CTest passed (100%); `kcc --emit-ptx [-o <file.ptx>]` verified |
+| **M6** | GPU Runner (O4) via CUDA Driver API | Next | — |
 | **M7** | PTX-subset Parser, Validator & Interpreter (O3) | Pending | — |
 | **M8** | Data-flow Framework & Optimizations (CP, DCE, CSE)| Pending | — |
 | **M9** | Multi-Oracle Differential Testing Harness (ptxdiff)| Pending | — |

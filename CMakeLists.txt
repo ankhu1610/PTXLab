@@ -79,12 +79,21 @@ target_include_directories(ptxlab_ir PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(ptxlab_ir PUBLIC ptxlab_kc ptxlab_support)
 
 # -------------------------------------------------------------
+# PTX Code Generation Library (ptxlab_ptx)
+# -------------------------------------------------------------
+add_library(ptxlab_ptx STATIC
+    src/ptx/ptx_emitter.cpp
+)
+target_include_directories(ptxlab_ptx PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(ptxlab_ptx PUBLIC ptxlab_ir ptxlab_support)
+
+# -------------------------------------------------------------
 # Compiler Executable (kcc)
 # -------------------------------------------------------------
 add_executable(kcc
     src/tools/kcc.cpp
 )
-target_link_libraries(kcc PRIVATE ptxlab_ir ptxlab_kc ptxlab_support)
+target_link_libraries(kcc PRIVATE ptxlab_ptx ptxlab_ir ptxlab_kc ptxlab_support)
 
 # -------------------------------------------------------------
 # Testing: GoogleTest integration via FetchContent
@@ -115,8 +124,9 @@ add_executable(unit_tests
     tests/unit/test_lower.cpp
     tests/unit/test_ir_verifier.cpp
     tests/unit/test_ir_interpreter.cpp
+    tests/unit/test_ptx_emitter.cpp
 )
-target_link_libraries(unit_tests PRIVATE ptxlab_ir ptxlab_kc ptxlab_support ptxlab_gate GTest::gtest_main)
+target_link_libraries(unit_tests PRIVATE ptxlab_ptx ptxlab_ir ptxlab_kc ptxlab_support ptxlab_gate GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(unit_tests)

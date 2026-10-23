@@ -12,6 +12,7 @@
 #include "ptxlab/kc/lexer.h"
 #include "ptxlab/kc/parser.h"
 #include "ptxlab/kc/sema.h"
+#include "ptxlab/ptx/ptx_emitter.h"
 #include "ptxlab/support/diagnostic.h"
 #include "ptxlab/support/source_manager.h"
 #include "ptxlab/version.h"
@@ -22,16 +23,17 @@ void printUsage(const char* progName) {
               << "Options:\n"
               << "  -h, --help       Show this help message\n"
               << "  -v, --version    Show compiler version\n"
-              << "  -p, --pipeline   Trace full compiler flow (Tokens -> AST -> Sema -> IR -> Run)\n"
+              << "  -p, --pipeline   Trace full compiler flow (Tokens -> AST -> Sema -> IR -> Run -> PTX)\n"
               << "  --dump-tokens    [M1] Dump token stream\n"
               << "  --dump-ast       [M2] Dump abstract syntax tree\n"
               << "  --check          [M3] Perform syntax & semantic type checking only\n"
               << "  --run-ast        [M3] Execute with AST interpreter (O1)\n"
               << "  --dump-ir        [M4] Dump three-address code IR\n"
               << "  --run-ir         [M4] Execute with IR interpreter (O2)\n"
+              << "  --emit-ptx       [M5] Generate PTX code to stdout or file\n"
+              << "  -o <file>        Output file for generated PTX (default: stdout)\n"
               << "  --grid <N>       Number of thread blocks (default 1)\n"
-              << "  --block <M>      Number of threads per block (default 1)\n"
-              << "  --emit-ptx       [M5] Generate PTX code to stdout or file\n";
+              << "  --block <M>      Number of threads per block (default 1)\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -49,8 +51,10 @@ int main(int argc, char* argv[]) {
     bool runAst = false;
     bool dumpIr = false;
     bool runIr = false;
+    bool emitPtx = false;
     int gridDim = 1;
     int blockDim = 1;
+    std::string outputFile;
     std::string inputFile;
 
     for (size_t i = 0; i < args.size(); ++i) {
@@ -78,6 +82,14 @@ int main(int argc, char* argv[]) {
             dumpIr = true;
         } else if (arg == "--run-ir") {
             runIr = true;
+        } else if (arg == "--emit-ptx") {
+            emitPtx = true;
+        } else if (arg == "-o") {
+            if (i + 1 >= args.size()) {
+                std::cerr << "kcc: error: missing argument to '-o'\n";
+                return 1;
+            }
+            outputFile = args[++i];
         } else if (arg == "--grid") {
             if (i + 1 >= args.size()) {
                 std::cerr << "kcc: error: missing argument to '--grid'\n";
@@ -259,7 +271,39 @@ int main(int argc, char* argv[]) {
             std::cout << "kcc: [O2 IR Interpreter]  kernel '" << irFunc.name()
                       << "' executed successfully.\n";
 
+            bool allMatch = true;
+            for (const auto& param : kernel.params()) {
+                if (param.type().isPtr()) {
+                    if (param.type().primitive == ptxlab::PrimitiveType::I32) {
+                        const auto& b1 = buffersO1.getI32(param.name());
+                        const auto& b2 = buffersO2.getI32(param.name());
+                        if (b1 != b2) {
+                            allMatch = false;
+                            std::cerr << "kcc: error: buffer parity mismatch in '" << param.name() << "'\n";
+                        }
+                    } else {
+                        const auto& b1 = buffersO1.getF32(param.name());
+                        const auto& b2 = buffersO2.getF32(param.name());
+                        if (b1 != b2) {
+                            allMatch = false;
+                            std::cerr << "kcc: error: buffer parity mismatch in '" << param.name() << "'\n";
+                        }
+                    }
+                }
+            }
+            if (!allMatch) {
+                return 1;
+            }
             std::cout << "[PASS] Differential Testing O1 == O2 verified bit-for-bit parity.\n";
+
+            std::cout << "\n============================================================\n"
+                      << " [STAGE 6] Target PTX Code Generation (sm_75 Virtual ISA)\n"
+                      << "============================================================\n";
+            ptxlab::ptx::PTXEmitter emitter;
+            std::string ptxCode = emitter.emit(*irMod);
+            std::cout << ptxCode;
+            std::cout << "[PASS] PTX Code Generation succeeded without errors.\n";
+
             std::cout << "\n[SUCCESS] Entire compiler pipeline completed successfully!\n";
             return 0;
         } catch (const ptxlab::UBTrap& trap) {
@@ -441,6 +485,22 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::cout << "kcc: verified and lowered '" << inputFile << "' successfully (use --dump-ir, --run-ir, or --dump-ast)\n";
+    if (emitPtx) {
+        ptxlab::ptx::PTXEmitter emitter;
+        std::string ptxCode = emitter.emit(*irModule);
+        if (!outputFile.empty()) {
+            std::ofstream out(outputFile);
+            if (!out.is_open()) {
+                std::cerr << "kcc: error: cannot open output file '" << outputFile << "' for writing\n";
+                return 1;
+            }
+            out << ptxCode;
+        } else {
+            std::cout << ptxCode;
+        }
+        return 0;
+    }
+
+    std::cout << "kcc: verified and lowered '" << inputFile << "' successfully (use --dump-ir, --run-ir, or --emit-ptx)\n";
     return 0;
 }

@@ -100,11 +100,14 @@ void Lowering::lowerStmt(const Stmt& stmt) {
 
     if (const auto* decl = dynamic_cast<const DeclStmt*>(&stmt)) {
         IRType varType = toIRType(decl->type());
-        IROperand varReg = IROperand::reg(currentFunc_->nextRegId(), varType);
-        setVar(decl->name(), varReg);
+        int regId = varType.isPred() ? currentFunc_->nextPredId() : currentFunc_->nextRegId();
+        IROperand varReg = IROperand::reg(regId, varType);
         if (decl->init()) {
             IROperand val = lowerExpr(*decl->init());
+            setVar(decl->name(), varReg);
             builder_.createCopy(varReg, val, decl->location());
+        } else {
+            setVar(decl->name(), varReg);
         }
         return;
     }
@@ -135,7 +138,7 @@ void Lowering::lowerStmt(const Stmt& stmt) {
         // Then branch
         builder_.setInsertPoint(thenBB);
         lowerStmt(*ifStmt->thenBranch());
-        if (!thenBB->hasTerminator()) {
+        if (auto* cur = builder_.getInsertPoint(); cur && !cur->hasTerminator()) {
             builder_.createBr(joinBB);
         }
 
@@ -143,7 +146,7 @@ void Lowering::lowerStmt(const Stmt& stmt) {
         if (elseBB) {
             builder_.setInsertPoint(elseBB);
             lowerStmt(*ifStmt->elseBranch());
-            if (!elseBB->hasTerminator()) {
+            if (auto* cur = builder_.getInsertPoint(); cur && !cur->hasTerminator()) {
                 builder_.createBr(joinBB);
             }
         }
@@ -164,7 +167,7 @@ void Lowering::lowerStmt(const Stmt& stmt) {
 
         builder_.setInsertPoint(bodyBB);
         lowerStmt(*whileStmt->body());
-        if (!bodyBB->hasTerminator()) {
+        if (auto* cur = builder_.getInsertPoint(); cur && !cur->hasTerminator()) {
             builder_.createBr(headBB);
         }
 
@@ -195,7 +198,7 @@ void Lowering::lowerStmt(const Stmt& stmt) {
 
         builder_.setInsertPoint(bodyBB);
         lowerStmt(*forStmt->body());
-        if (!bodyBB->hasTerminator()) {
+        if (auto* cur = builder_.getInsertPoint(); cur && !cur->hasTerminator()) {
             builder_.createBr(stepBB);
         }
 
@@ -203,7 +206,9 @@ void Lowering::lowerStmt(const Stmt& stmt) {
         if (forStmt->step()) {
             lowerStmt(*forStmt->step());
         }
-        builder_.createBr(headBB);
+        if (auto* cur = builder_.getInsertPoint(); cur && !cur->hasTerminator()) {
+            builder_.createBr(headBB);
+        }
 
         builder_.setInsertPoint(exitBB);
         exitScope();
