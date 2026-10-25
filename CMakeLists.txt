@@ -88,12 +88,21 @@ target_include_directories(ptxlab_ptx PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(ptxlab_ptx PUBLIC ptxlab_ir ptxlab_support)
 
 # -------------------------------------------------------------
+# GPU Runner Library (ptxlab_gpu) — dynamic CUDA Driver API
+# -------------------------------------------------------------
+add_library(ptxlab_gpu STATIC
+    src/gpu/gpu_runner.cpp
+)
+target_include_directories(ptxlab_gpu PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(ptxlab_gpu PUBLIC ptxlab_ir ptxlab_kc ptxlab_support)
+
+# -------------------------------------------------------------
 # Compiler Executable (kcc)
 # -------------------------------------------------------------
 add_executable(kcc
     src/tools/kcc.cpp
 )
-target_link_libraries(kcc PRIVATE ptxlab_ptx ptxlab_ir ptxlab_kc ptxlab_support)
+target_link_libraries(kcc PRIVATE ptxlab_gpu ptxlab_ptx ptxlab_ir ptxlab_kc ptxlab_support)
 
 # -------------------------------------------------------------
 # Testing: GoogleTest integration via FetchContent
@@ -125,8 +134,9 @@ add_executable(unit_tests
     tests/unit/test_ir_verifier.cpp
     tests/unit/test_ir_interpreter.cpp
     tests/unit/test_ptx_emitter.cpp
+    tests/unit/test_gpu_runner.cpp
 )
-target_link_libraries(unit_tests PRIVATE ptxlab_ptx ptxlab_ir ptxlab_kc ptxlab_support ptxlab_gate GTest::gtest_main)
+target_link_libraries(unit_tests PRIVATE ptxlab_gpu ptxlab_ptx ptxlab_ir ptxlab_kc ptxlab_support ptxlab_gate GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(unit_tests)

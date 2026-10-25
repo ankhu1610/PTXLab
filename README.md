@@ -89,8 +89,8 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 ```text
-100% tests passed out of 127
-Total Test time (real) = 1.05 sec
+100% tests passed out of 132
+Total Test time (real) = 1.97 sec
 ```
 
 ---
@@ -105,7 +105,7 @@ Usage: kcc [options] <input.kc>
 Options:
   -h, --help       Show help message
   -v, --version    Show compiler version
-  -p, --pipeline   Trace full compiler flow (Tokens -> AST -> Sema -> IR -> Run -> PTX)
+  -p, --pipeline   Trace full compiler flow (Tokens -> AST -> Sema -> IR -> Run -> PTX -> GPU)
   --dump-tokens    [M1] Dump lexical token stream
   --dump-ast       [M2] Dump Abstract Syntax Tree (AST)
   --check          [M3] Perform syntax and semantic type check only
@@ -113,6 +113,7 @@ Options:
   --dump-ir        [M4] Dump Three-Address Code (TAC) IR
   --run-ir         [M4] Execute on CPU with TAC IR Reference Interpreter (O2)
   --emit-ptx       [M5] Generate PTX code to stdout or file
+  --run-gpu        [M6] Execute on GPU via CUDA Driver API (O4)
   -o <file>        Output file for generated PTX (default: stdout)
   --grid <N>       Number of thread blocks to launch (default 1)
   --block <M>      Number of threads per block (default 1)
@@ -211,6 +212,18 @@ if_join_0:
 }
 ```
 
+### Example 4: Execute on Physical GPU Silicon (Oracle O4)
+Compile and launch the kernel on the NVIDIA GPU via the CUDA Driver API:
+```bash
+./build/kcc --run-gpu --grid 4 --block 32 tests/programs/saxpy.kc
+```
+**Output:**
+```text
+kcc: [O4 GPU Runner] kernel 'saxpy' executed successfully on NVIDIA GeForce RTX 5070 Ti Laptop GPU (sm_120) (4 blocks x 32 threads = 128 total threads) [JIT: 0.37 ms, Launch: 0.03 ms]
+  buffer 'x' output sample: [1, 2, 3, 4, 5, 6, 7, 8, ...]
+  buffer 'y' output sample: [3.5, 7, 10.5, 14, 17.5, 21, 24.5, 28, ...]
+```
+
 ---
 
 ## 📂 Project Structure
@@ -222,23 +235,25 @@ PTXLab/
 │   ├── grammar.md                 # Formal Kernel C Grammar (EBNF)
 │   ├── lexer-dfa.md               # Lexer DFA state transition table
 │   ├── STATUS.md                  # Milestone status ledger & verification evidence
-│   └── design/                    # Architectural design documents (M0 to M5)
+│   └── design/                    # Architectural design documents (M0 to M6)
 ├── include/ptxlab/
 │   ├── support/                   # Diagnostics, SourceManager, SourceLocation
 │   ├── kc/                        # Lexer, Parser, AST, Scoped Symbol Table, Sema, O1
 │   ├── ir/                        # TAC Instructions, BasicBlock, Function, CFG, Verifier, O2
-│   └── ptx/                       # PTXEmitter for NVIDIA PTX Virtual ISA 7.0 (sm_75)
+│   ├── ptx/                       # PTXEmitter for NVIDIA PTX Virtual ISA 7.0 (sm_75)
+│   └── gpu/                       # GPURunner for CUDA Driver API execution (O4)
 ├── src/
 │   ├── support/                   # SourceManager & DiagnosticEngine implementations
 │   ├── kc/                        # Lexer, Parser, ASTPrinter, Sema, ASTInterpreter
 │   ├── ir/                        # IRBuilder, IRPrinter, Lowering, IRVerifier, IRInterpreter
 │   ├── ptx/                       # PTXEmitter assembly generator implementation
+│   ├── gpu/                       # GPURunner dynamic nvcuda.dll loader & JIT launcher
 │   └── tools/
 │       └── kcc.cpp                # kcc compiler CLI driver
 ├── tests/
 │   ├── programs/                  # Test kernels in Kernel C (.kc)
 │   ├── ptx_corpus/                # Reference PTX files
-│   └── unit/                      # 127 GoogleTest unit test suites
+│   └── unit/                      # 132 GoogleTest unit test suites
 └── tools/gate-lab/                # Formal grammar analyzer (FIRST/FOLLOW/LL(1))
 ```
 
@@ -254,7 +269,8 @@ PTXLab/
 | **M3** | Semantic Analysis (Sema) & AST Interpreter (O1) | **DONE** | Scoped symbol table, strict types, UB traps; 101 unit tests |
 | **M4** | Typed TAC IR, CFG, Verifier & IR Interpreter (O2) | **DONE** | BasicBlock CFG, jumping code, O1 == O2 parity; 119 unit tests |
 | **M5** | PTX Emitter & Target Generation | **DONE** | PTX 7.0 / sm_75 generator, typed register banks, IEEE .rn, 127 unit tests |
-| **M6** | GPU Runner (O4) via CUDA Driver API | **NEXT** | Hardware execution on RTX 5070 Ti (sm_120) |
+| **M6** | GPU Runner (O4) via CUDA Driver API | **DONE** | Dynamic nvcuda loader, driver JIT, RTX 5070 Ti execution, 3-way parity (O1==O2==O4), 132 unit tests |
+| **M7** | PTX-subset Parser, Validator & Interpreter (O3) | **NEXT** | Independent validation oracle |
 | **M7** | PTX-subset Parser, Validator & Interpreter (O3) | Pending | Independent validation oracle |
 | **M8** | Data-Flow Analysis & Optimizations (CP, DCE, CSE)| Pending | Optimization pipeline |
 | **M9** | Multi-Oracle Differential Testing (`ptxdiff`) | Pending | Automated fuzzer and oracle comparison |

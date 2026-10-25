@@ -13,6 +13,7 @@
 #include "ptxlab/kc/parser.h"
 #include "ptxlab/kc/sema.h"
 #include "ptxlab/ptx/ptx_emitter.h"
+#include "ptxlab/gpu/gpu_runner.h"
 #include "ptxlab/support/diagnostic.h"
 #include "ptxlab/support/source_manager.h"
 #include "ptxlab/version.h"
@@ -23,7 +24,7 @@ void printUsage(const char* progName) {
               << "Options:\n"
               << "  -h, --help       Show this help message\n"
               << "  -v, --version    Show compiler version\n"
-              << "  -p, --pipeline   Trace full compiler flow (Tokens -> AST -> Sema -> IR -> Run -> PTX)\n"
+              << "  -p, --pipeline   Trace full compiler flow (Tokens -> AST -> Sema -> IR -> Run -> PTX -> GPU)\n"
               << "  --dump-tokens    [M1] Dump token stream\n"
               << "  --dump-ast       [M2] Dump abstract syntax tree\n"
               << "  --check          [M3] Perform syntax & semantic type checking only\n"
@@ -31,6 +32,7 @@ void printUsage(const char* progName) {
               << "  --dump-ir        [M4] Dump three-address code IR\n"
               << "  --run-ir         [M4] Execute with IR interpreter (O2)\n"
               << "  --emit-ptx       [M5] Generate PTX code to stdout or file\n"
+              << "  --run-gpu        [M6] Execute on GPU via CUDA Driver API (O4)\n"
               << "  -o <file>        Output file for generated PTX (default: stdout)\n"
               << "  --grid <N>       Number of thread blocks (default 1)\n"
               << "  --block <M>      Number of threads per block (default 1)\n";
@@ -52,6 +54,7 @@ int main(int argc, char* argv[]) {
     bool dumpIr = false;
     bool runIr = false;
     bool emitPtx = false;
+    bool runGpu = false;
     int gridDim = 1;
     int blockDim = 1;
     std::string outputFile;
@@ -84,6 +87,8 @@ int main(int argc, char* argv[]) {
             runIr = true;
         } else if (arg == "--emit-ptx") {
             emitPtx = true;
+        } else if (arg == "--run-gpu") {
+            runGpu = true;
         } else if (arg == "-o") {
             if (i + 1 >= args.size()) {
                 std::cerr << "kcc: error: missing argument to '-o'\n";
@@ -304,6 +309,63 @@ int main(int argc, char* argv[]) {
             std::cout << ptxCode;
             std::cout << "[PASS] PTX Code Generation succeeded without errors.\n";
 
+            std::cout << "\n============================================================\n"
+                      << " [STAGE 7] Physical GPU Execution & 3-Way Differential Parity\n"
+                      << "============================================================\n";
+            ptxlab::gpu::GPURunner gpuRunner;
+            std::string gpuErr;
+            if (gpuRunner.init(&gpuErr)) {
+                ptxlab::BufferManager buffersO4;
+                std::unordered_map<std::string, ptxlab::KernelArg> kArgsO4;
+                for (const auto& param : kernel.params()) {
+                    if (param.type().isPtr()) {
+                        if (param.type().primitive == ptxlab::PrimitiveType::I32) {
+                            std::vector<int32_t> initData(static_cast<size_t>(totalThreads), 0);
+                            buffersO4.allocateI32(param.name(), initData);
+                        } else {
+                            std::vector<float> initData(static_cast<size_t>(totalThreads), 0.0f);
+                            buffersO4.allocateF32(param.name(), initData);
+                        }
+                        kArgsO4[param.name()] = ptxlab::KernelArg::fromBuffer(param.name());
+                    } else if (param.type().isInt()) {
+                        kArgsO4[param.name()] = ptxlab::KernelArg::fromI32(totalThreads);
+                    } else if (param.type().isFloat()) {
+                        kArgsO4[param.name()] = ptxlab::KernelArg::fromF32(1.0f);
+                    } else if (param.type().isBool()) {
+                        kArgsO4[param.name()] = ptxlab::KernelArg::fromBool(true);
+                    }
+                }
+                auto res = gpuRunner.launch(ptxCode, irFunc.name(), gridDim, blockDim, irFunc.params(), buffersO4, kArgsO4);
+                if (res.success) {
+                    std::cout << "kcc: [O4 GPU Runner] kernel '" << irFunc.name()
+                              << "' executed on " << res.device.name << " (sm_"
+                              << res.device.computeMajor << res.device.computeMinor << ")"
+                              << " [JIT: " << res.jitTimeMs << " ms, Launch: " << res.launchTimeMs << " ms]\n";
+                    bool gpuMatch = true;
+                    for (const auto& param : kernel.params()) {
+                        if (param.type().isPtr()) {
+                            if (param.type().primitive == ptxlab::PrimitiveType::I32) {
+                                if (buffersO1.getI32(param.name()) != buffersO4.getI32(param.name())) {
+                                    gpuMatch = false;
+                                    std::cerr << "kcc: error: buffer parity mismatch between CPU and GPU in '" << param.name() << "'\n";
+                                }
+                            } else {
+                                if (buffersO1.getF32(param.name()) != buffersO4.getF32(param.name())) {
+                                    gpuMatch = false;
+                                    std::cerr << "kcc: error: buffer parity mismatch between CPU and GPU in '" << param.name() << "'\n";
+                                }
+                            }
+                        }
+                    }
+                    if (!gpuMatch) return 1;
+                    std::cout << "[PASS] 3-Way Differential Testing O1 == O2 == O4 verified bit-for-bit parity on real hardware!\n";
+                } else {
+                    std::cerr << "kcc: [O4 GPU Runner warning]: " << res.error << "\n";
+                }
+            } else {
+                std::cout << "kcc: [O4 GPU Runner skipped]: " << gpuErr << "\n";
+            }
+
             std::cout << "\n[SUCCESS] Entire compiler pipeline completed successfully!\n";
             return 0;
         } catch (const ptxlab::UBTrap& trap) {
@@ -501,6 +563,85 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    std::cout << "kcc: verified and lowered '" << inputFile << "' successfully (use --dump-ir, --run-ir, or --emit-ptx)\n";
+    if (runGpu) {
+        if (!irModule || irModule->functions().empty()) {
+            std::cerr << "kcc: error: no functions found in IR module to execute\n";
+            return 1;
+        }
+
+        ptxlab::ptx::PTXEmitter emitter;
+        std::string ptxCode = emitter.emit(*irModule);
+
+        ptxlab::gpu::GPURunner gpuRunner;
+        std::string gpuErr;
+        if (!gpuRunner.init(&gpuErr)) {
+            std::cerr << "kcc: error: failed to initialize GPU: " << gpuErr << "\n";
+            return 1;
+        }
+
+        ptxlab::BufferManager buffers;
+        const auto& func = *irModule->functions()[0];
+        std::unordered_map<std::string, ptxlab::KernelArg> args;
+        int totalThreads = gridDim * blockDim;
+
+        for (const auto& param : func.params()) {
+            if (param.type.isPtr()) {
+                if (param.type.isInt()) {
+                    std::vector<int32_t> data(static_cast<size_t>(totalThreads));
+                    for (size_t k = 0; k < data.size(); ++k) data[k] = static_cast<int32_t>(k + 1);
+                    buffers.allocateI32(param.name, std::move(data));
+                } else {
+                    std::vector<float> data(static_cast<size_t>(totalThreads));
+                    for (size_t k = 0; k < data.size(); ++k) data[k] = static_cast<float>(k + 1);
+                    buffers.allocateF32(param.name, std::move(data));
+                }
+                args[param.name] = ptxlab::KernelArg::fromBuffer(param.name);
+            } else if (param.type.isInt()) {
+                args[param.name] = ptxlab::KernelArg::fromI32(totalThreads);
+            } else if (param.type.isFloat()) {
+                args[param.name] = ptxlab::KernelArg::fromF32(2.5f);
+            } else if (param.type.isPred()) {
+                args[param.name] = ptxlab::KernelArg::fromBool(true);
+            }
+        }
+
+        auto result = gpuRunner.launch(ptxCode, func.name(), gridDim, blockDim, func.params(), buffers, args);
+        if (!result.success) {
+            std::cerr << "kcc: [O4 GPU Runner ERROR]: " << result.error << "\n";
+            return 1;
+        }
+
+        std::cout << "kcc: [O4 GPU Runner] kernel '" << func.name()
+                  << "' executed successfully on " << result.device.name
+                  << " (sm_" << result.device.computeMajor << result.device.computeMinor << ")"
+                  << " (" << gridDim << " blocks x " << blockDim << " threads = "
+                  << totalThreads << " total threads)"
+                  << " [JIT: " << result.jitTimeMs << " ms, Launch: " << result.launchTimeMs << " ms]\n";
+
+        for (const auto& param : func.params()) {
+            if (param.type.isPtr()) {
+                std::cout << "  buffer '" << param.name << "' output sample: [";
+                if (param.type.isInt()) {
+                    const auto& b = buffers.getI32(param.name);
+                    size_t count = std::min<size_t>(b.size(), 8);
+                    for (size_t k = 0; k < count; ++k) {
+                        std::cout << b[k] << (k + 1 < count ? ", " : "");
+                    }
+                    if (b.size() > 8) std::cout << ", ...";
+                } else {
+                    const auto& b = buffers.getF32(param.name);
+                    size_t count = std::min<size_t>(b.size(), 8);
+                    for (size_t k = 0; k < count; ++k) {
+                        std::cout << b[k] << (k + 1 < count ? ", " : "");
+                    }
+                    if (b.size() > 8) std::cout << ", ...";
+                }
+                std::cout << "]\n";
+            }
+        }
+        return 0;
+    }
+
+    std::cout << "kcc: verified and lowered '" << inputFile << "' successfully (use --dump-ir, --run-ir, --emit-ptx, or --run-gpu)\n";
     return 0;
 }
