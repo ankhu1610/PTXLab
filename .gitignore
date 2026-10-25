@@ -11,7 +11,7 @@ output/
 *.o
 *.cubin
 *.ptx
-!tests/ptx_corpus/smoke.ptx
+!tests/ptx_corpus/**
 
 # Implementation plans & project roadmaps
 *plan*.md

@@ -1,7 +1,7 @@
 # PTXLab Project Status Ledger
 
 Last Updated: 2026-10-25  
-Current Milestone: **M6 — GPU Runner (Oracle O4) via CUDA Driver API** (Completed) -> **M7 Next**  
+Current Milestone: **M7 — PTX-subset Parser, Validator & Reference Interpreter (Oracle O3)** (Completed) -> **M8 Next**  
 Platform: **Native Windows (MinGW-w64 UCRT GCC 16.2 / Clang 23.1 + CMake 4.4 + Ninja 1.13)**
 
 ---
@@ -32,9 +32,8 @@ Platform: **Native Windows (MinGW-w64 UCRT GCC 16.2 / Clang 23.1 + CMake 4.4 + N
 | **M4** | Typed TAC IR, CFG, Verifier & IR Interpreter (O2) | **COMPLETED** | Typed TAC IR + CFG basic blocks + jumping-code lowering + IR Verifier + CPU Reference Interpreter (O2); 119/119 CTest passed (100%); `kcc --dump-ir` & `kcc --run-ir` verified; bit-exact O1 == O2 parity verified |
 | **M5** | PTX Emitter & Target Generation | **COMPLETED** | `PTXEmitter` for PTX 7.0 / sm_75 ISA; typed register banks (`%r`, `%f`, `%rd`, `%p`); parameter ABI + generic-to-global conversion; IEEE 754 `.rn` rounding; 64-bit wide array indexing; 127/127 CTest passed (100%); `kcc --emit-ptx [-o <file.ptx>]` verified |
 | **M6** | GPU Runner (O4) via CUDA Driver API | **COMPLETED** | Dynamic `nvcuda.dll` loader; `cuModuleLoadDataEx` driver JIT compiler; VRAM memory management; `cuLaunchKernel` execution on RTX 5070 Ti (`sm_120`); 132/132 CTest passed (100%); 3-way differential parity $O_1 == O_2 == O_4$ verified; `kcc --run-gpu` and 7-stage `--pipeline` verified |
-| **M7** | PTX-subset Parser, Validator & Interpreter (O3) | Next | — |
-| **M7** | PTX-subset Parser, Validator & Interpreter (O3) | Pending | — |
-| **M8** | Data-flow Framework & Optimizations (CP, DCE, CSE)| Pending | — |
+| **M7** | PTX-subset Parser, Validator & Interpreter (O3) | **COMPLETED** | Standalone PTX Lexer & Parser (`PTXModule` AST) + Structural & Type Validator + CPU Reference Interpreter (Oracle O3); 146/146 CTest passed (100%); 4-way differential parity $O_1 == O_2 == O_3 == O_4$ verified; `kcc --run-ptx <file.ptx\|file.kc>` and 8-stage `--pipeline` verified; static linking on Windows MinGW verified |
+| **M8** | Data-flow Framework & Optimizations (CP, DCE, CSE)| **NEXT** | Optimization pipeline |
 | **M9** | Multi-Oracle Differential Testing Harness (ptxdiff)| Pending | — |
 | **M10**| Generator, Reducer & Mutation Testing | Pending | — |
 | **M11**| Evaluation & Final Presentation | Pending | — |
@@ -42,5 +41,5 @@ Platform: **Native Windows (MinGW-w64 UCRT GCC 16.2 / Clang 23.1 + CMake 4.4 + N
 ---
 
 ## 3. Known Limitations & Open Issues
-* `ptxas` is not yet installed in PATH; offline PTX assembly verification will remain marked UNVERIFIED until the toolkit component is set up.
-* MinGW binaries require MinGW `bin/` in PATH or `-static-libstdc++ -static-libgcc` to run outside development terminals.
+* `ptxas` is not yet installed in PATH; offline PTX assembly verification is substituted by driver JIT (`cuModuleLoadDataEx`) and the M7 PTX Validator & Interpreter.
+* Fully static MinGW linking (`-static -static-libgcc -static-libstdc++`) is configured in CMake to ensure zero DLL dependencies and compliance with Windows Code Integrity policy.

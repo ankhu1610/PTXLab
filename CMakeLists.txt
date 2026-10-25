@@ -21,6 +21,9 @@ if(MSVC)
     add_compile_options(/W4 /permissive-)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wno-unused-parameter)
+    if(WIN32)
+        add_link_options(-static -static-libgcc -static-libstdc++)
+    endif()
 endif()
 
 # Global include directory
@@ -79,13 +82,16 @@ target_include_directories(ptxlab_ir PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(ptxlab_ir PUBLIC ptxlab_kc ptxlab_support)
 
 # -------------------------------------------------------------
-# PTX Code Generation Library (ptxlab_ptx)
+# PTX Code Generation & Analysis Library (ptxlab_ptx)
 # -------------------------------------------------------------
 add_library(ptxlab_ptx STATIC
     src/ptx/ptx_emitter.cpp
+    src/ptx/ptx_parser.cpp
+    src/ptx/ptx_validator.cpp
+    src/ptx/ptx_interpreter.cpp
 )
 target_include_directories(ptxlab_ptx PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(ptxlab_ptx PUBLIC ptxlab_ir ptxlab_support)
+target_link_libraries(ptxlab_ptx PUBLIC ptxlab_ir ptxlab_kc ptxlab_support)
 
 # -------------------------------------------------------------
 # GPU Runner Library (ptxlab_gpu) — dynamic CUDA Driver API
@@ -134,6 +140,7 @@ add_executable(unit_tests
     tests/unit/test_ir_verifier.cpp
     tests/unit/test_ir_interpreter.cpp
     tests/unit/test_ptx_emitter.cpp
+    tests/unit/test_ptx_interpreter.cpp
     tests/unit/test_gpu_runner.cpp
 )
 target_link_libraries(unit_tests PRIVATE ptxlab_gpu ptxlab_ptx ptxlab_ir ptxlab_kc ptxlab_support ptxlab_gate GTest::gtest_main)

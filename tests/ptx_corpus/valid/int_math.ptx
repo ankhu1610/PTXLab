@@ -1,0 +1,37 @@
+.version 7.0
+.target sm_75
+.address_size 64
+
+.visible .entry int_math(
+    .param .u32 _param_n,
+    .param .u64 _param_out
+)
+{
+    .reg .b32   %r<10>;
+    .reg .b64   %rd<4>;
+    .reg .b64   %rd_offset;
+    .reg .pred  %p<2>;
+
+$L_entry:
+    ld.param.u32    %r0, [_param_n];
+    ld.param.u64    %rd0, [_param_out];
+    cvta.to.global.u64 %rd1, %rd0;
+    mov.u32         %r1, %tid.x;
+    setp.ge.s32     %p0, %r1, %r0;
+    @%p0 bra        $L_exit;
+
+    // Perform arithmetic and bitwise
+    add.s32         %r2, %r1, 10;
+    sub.s32         %r3, %r2, 2;
+    mul.lo.s32      %r4, %r3, 3;
+    shl.b32         %r5, %r4, 1;
+    xor.b32         %r6, %r5, 7;
+
+    // Store to global
+    mul.wide.s32    %rd_offset, %r1, 4;
+    add.s64         %rd2, %rd1, %rd_offset;
+    st.global.s32   [%rd2], %r6;
+
+$L_exit:
+    ret;
+}

@@ -1,0 +1,8 @@
+.version 7.0
+.target sm_75
+.address_size 64
+
+.visible .entry undefined_label() {
+    bra $L_nonexistent;
+    ret;
+}

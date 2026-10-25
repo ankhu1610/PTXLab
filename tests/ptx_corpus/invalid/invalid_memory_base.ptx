@@ -1,0 +1,9 @@
+.version 7.0
+.target sm_75
+.address_size 64
+
+.visible .entry invalid_memory_base() {
+    .reg .b32 %r<4>;
+    ld.global.s32 %r0, [%r1];
+    ret;
+}

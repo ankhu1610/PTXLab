@@ -13,6 +13,10 @@
 #include "ptxlab/kc/parser.h"
 #include "ptxlab/kc/sema.h"
 #include "ptxlab/ptx/ptx_emitter.h"
+#include "ptxlab/ptx/ptx_ast.h"
+#include "ptxlab/ptx/ptx_parser.h"
+#include "ptxlab/ptx/ptx_validator.h"
+#include "ptxlab/ptx/ptx_interpreter.h"
 #include "ptxlab/gpu/gpu_runner.h"
 #include "ptxlab/support/diagnostic.h"
 #include "ptxlab/support/source_manager.h"
@@ -20,11 +24,11 @@
 
 void printUsage(const char* progName) {
     std::cout << ptxlab::getBanner() << "\n\n"
-              << "Usage: " << progName << " [options] <input.kc>\n\n"
+              << "Usage: " << progName << " [options] <input.kc|file.ptx>\n\n"
               << "Options:\n"
               << "  -h, --help       Show this help message\n"
               << "  -v, --version    Show compiler version\n"
-              << "  -p, --pipeline   Trace full compiler flow (Tokens -> AST -> Sema -> IR -> Run -> PTX -> GPU)\n"
+              << "  -p, --pipeline   Trace full compiler flow (Tokens -> AST -> Sema -> IR -> Run -> PTX -> O3 -> GPU)\n"
               << "  --dump-tokens    [M1] Dump token stream\n"
               << "  --dump-ast       [M2] Dump abstract syntax tree\n"
               << "  --check          [M3] Perform syntax & semantic type checking only\n"
@@ -33,6 +37,7 @@ void printUsage(const char* progName) {
               << "  --run-ir         [M4] Execute with IR interpreter (O2)\n"
               << "  --emit-ptx       [M5] Generate PTX code to stdout or file\n"
               << "  --run-gpu        [M6] Execute on GPU via CUDA Driver API (O4)\n"
+              << "  --run-ptx        [M7] Execute with PTX reference interpreter (O3)\n"
               << "  -o <file>        Output file for generated PTX (default: stdout)\n"
               << "  --grid <N>       Number of thread blocks (default 1)\n"
               << "  --block <M>      Number of threads per block (default 1)\n";
@@ -55,6 +60,7 @@ int main(int argc, char* argv[]) {
     bool runIr = false;
     bool emitPtx = false;
     bool runGpu = false;
+    bool runPtx = false;
     int gridDim = 1;
     int blockDim = 1;
     std::string outputFile;
@@ -89,6 +95,8 @@ int main(int argc, char* argv[]) {
             emitPtx = true;
         } else if (arg == "--run-gpu") {
             runGpu = true;
+        } else if (arg == "--run-ptx") {
+            runPtx = true;
         } else if (arg == "-o") {
             if (i + 1 >= args.size()) {
                 std::cerr << "kcc: error: missing argument to '-o'\n";
@@ -134,6 +142,66 @@ int main(int argc, char* argv[]) {
     std::stringstream buffer;
     buffer << file.rdbuf();
     std::string sourceCode = buffer.str();
+
+    // Check if input is direct PTX virtual assembly
+    if (inputFile.size() >= 4 && inputFile.substr(inputFile.size() - 4) == ".ptx") {
+        std::string parseErr;
+        auto ptxMod = ptxlab::ptx::PTXParser::parseString(sourceCode, &parseErr);
+        if (!ptxMod) {
+            std::cerr << "kcc: error parsing PTX:\n" << parseErr << "\n";
+            return 1;
+        }
+        ptxlab::ptx::PTXValidator validator;
+        if (!validator.validate(*ptxMod)) {
+            std::cerr << "kcc: PTX validation error(s):\n";
+            for (const auto& err : validator.errors()) {
+                std::cerr << "  " << err << "\n";
+            }
+            return 1;
+        }
+        if (checkOnly) {
+            std::cout << "kcc: PTX module '" << inputFile << "' validated successfully.\n";
+            return 0;
+        }
+        if (runPtx || pipeline) {
+            if (ptxMod->kernels().empty()) {
+                std::cerr << "kcc: error: no kernels found in PTX module\n";
+                return 1;
+            }
+            const auto& kernel = *ptxMod->kernels()[0];
+            ptxlab::BufferManager buffers;
+            std::unordered_map<std::string, ptxlab::KernelArg> kargs;
+            int totalThreads = gridDim * blockDim;
+
+            for (const auto& param : kernel.params()) {
+                std::string argKey = param.name;
+                if (argKey.rfind("_param_", 0) == 0) argKey = argKey.substr(7);
+                if (param.type == ptxlab::ptx::PTXType::U64) {
+                    std::vector<float> data(static_cast<size_t>(totalThreads), 1.0f);
+                    buffers.allocateF32(argKey, std::move(data));
+                    kargs[argKey] = ptxlab::KernelArg::fromBuffer(argKey);
+                } else if (param.type == ptxlab::ptx::PTXType::F32) {
+                    kargs[argKey] = ptxlab::KernelArg::fromF32(2.5f);
+                } else if (param.type == ptxlab::ptx::PTXType::Pred) {
+                    kargs[argKey] = ptxlab::KernelArg::fromBool(true);
+                } else {
+                    kargs[argKey] = ptxlab::KernelArg::fromI32(totalThreads);
+                }
+            }
+            ptxlab::ptx::PTXInterpreter interpreter(buffers);
+            auto res = interpreter.launch(kernel, gridDim, blockDim, kargs);
+            if (!res.success) {
+                std::cerr << "kcc: [O3 PTX Interpreter ERROR]: " << res.error << "\n";
+                return 1;
+            }
+            std::cout << "kcc: [O3 PTX Interpreter] kernel '" << kernel.name()
+                      << "' executed successfully (" << gridDim << " blocks x " << blockDim << " threads = "
+                      << totalThreads << " total threads) [Cycles: " << res.totalCycles << "]\n";
+            return 0;
+        }
+        std::cout << "kcc: PTX file '" << inputFile << "' parsed and validated successfully (use --run-ptx to execute).\n";
+        return 0;
+    }
 
     ptxlab::SourceManager sourceMgr(inputFile, std::move(sourceCode));
     ptxlab::DiagnosticEngine diagEngine;
@@ -310,7 +378,76 @@ int main(int argc, char* argv[]) {
             std::cout << "[PASS] PTX Code Generation succeeded without errors.\n";
 
             std::cout << "\n============================================================\n"
-                      << " [STAGE 7] Physical GPU Execution & 3-Way Differential Parity\n"
+                      << " [STAGE 7] PTX Parser, Validator & Reference Interpreter (Oracle O3)\n"
+                      << "============================================================\n";
+            std::string parseErr;
+            auto ptxMod = ptxlab::ptx::PTXParser::parseString(ptxCode, &parseErr);
+            if (!ptxMod) {
+                std::cerr << "kcc: error parsing generated PTX:\n" << parseErr << "\n";
+                return 1;
+            }
+            ptxlab::ptx::PTXValidator validator;
+            if (!validator.validate(*ptxMod)) {
+                std::cerr << "kcc: error validating generated PTX:\n";
+                for (const auto& err : validator.errors()) {
+                    std::cerr << "  " << err << "\n";
+                }
+                return 1;
+            }
+            std::cout << "[PASS] PTX Module parsed and validated successfully (Version " << ptxMod->version()
+                      << ", Target " << ptxMod->target() << ", Address Size " << ptxMod->addressSize() << ").\n";
+
+            ptxlab::BufferManager buffersO3;
+            std::unordered_map<std::string, ptxlab::KernelArg> kArgsO3;
+            for (const auto& param : kernel.params()) {
+                if (param.type().isPtr()) {
+                    if (param.type().primitive == ptxlab::PrimitiveType::I32) {
+                        std::vector<int32_t> initData(static_cast<size_t>(totalThreads), 0);
+                        buffersO3.allocateI32(param.name(), initData);
+                    } else {
+                        std::vector<float> initData(static_cast<size_t>(totalThreads), 0.0f);
+                        buffersO3.allocateF32(param.name(), initData);
+                    }
+                    kArgsO3[param.name()] = ptxlab::KernelArg::fromBuffer(param.name());
+                } else if (param.type().isInt()) {
+                    kArgsO3[param.name()] = ptxlab::KernelArg::fromI32(totalThreads);
+                } else if (param.type().isFloat()) {
+                    kArgsO3[param.name()] = ptxlab::KernelArg::fromF32(1.0f);
+                } else if (param.type().isBool()) {
+                    kArgsO3[param.name()] = ptxlab::KernelArg::fromBool(true);
+                }
+            }
+
+            ptxlab::ptx::PTXInterpreter interpO3(buffersO3);
+            auto resO3 = interpO3.launch(*ptxMod, irFunc.name(), gridDim, blockDim, kArgsO3);
+            if (!resO3.success) {
+                std::cerr << "kcc: [O3 PTX Interpreter ERROR]: " << resO3.error << "\n";
+                return 1;
+            }
+            std::cout << "kcc: [O3 PTX Interpreter] kernel '" << irFunc.name()
+                      << "' executed successfully [Total Cycles: " << resO3.totalCycles << "]\n";
+
+            bool o3Match = true;
+            for (const auto& param : kernel.params()) {
+                if (param.type().isPtr()) {
+                    if (param.type().primitive == ptxlab::PrimitiveType::I32) {
+                        if (buffersO1.getI32(param.name()) != buffersO3.getI32(param.name())) {
+                            o3Match = false;
+                            std::cerr << "kcc: error: buffer parity mismatch between O1 and O3 in '" << param.name() << "'\n";
+                        }
+                    } else {
+                        if (buffersO1.getF32(param.name()) != buffersO3.getF32(param.name())) {
+                            o3Match = false;
+                            std::cerr << "kcc: error: buffer parity mismatch between O1 and O3 in '" << param.name() << "'\n";
+                        }
+                    }
+                }
+            }
+            if (!o3Match) return 1;
+            std::cout << "[PASS] 3-Way Differential Testing O1 == O2 == O3 verified bit-for-bit parity!\n";
+
+            std::cout << "\n============================================================\n"
+                      << " [STAGE 8] Physical GPU Execution & 4-Way Differential Parity\n"
                       << "============================================================\n";
             ptxlab::gpu::GPURunner gpuRunner;
             std::string gpuErr;
@@ -358,7 +495,7 @@ int main(int argc, char* argv[]) {
                         }
                     }
                     if (!gpuMatch) return 1;
-                    std::cout << "[PASS] 3-Way Differential Testing O1 == O2 == O4 verified bit-for-bit parity on real hardware!\n";
+                    std::cout << "[PASS] 4-Way Differential Testing O1 == O2 == O3 == O4 verified bit-for-bit parity on real hardware!\n";
                 } else {
                     std::cerr << "kcc: [O4 GPU Runner warning]: " << res.error << "\n";
                 }
@@ -642,6 +779,76 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    std::cout << "kcc: verified and lowered '" << inputFile << "' successfully (use --dump-ir, --run-ir, --emit-ptx, or --run-gpu)\n";
+    if (runPtx) {
+        if (!irModule || irModule->functions().empty()) {
+            std::cerr << "kcc: error: no functions found in IR module to execute\n";
+            return 1;
+        }
+
+        ptxlab::ptx::PTXEmitter emitter;
+        std::string ptxCode = emitter.emit(*irModule);
+
+        ptxlab::BufferManager buffers;
+        const auto& func = *irModule->functions()[0];
+        std::unordered_map<std::string, ptxlab::KernelArg> args;
+        int totalThreads = gridDim * blockDim;
+
+        for (const auto& param : func.params()) {
+            if (param.type.isPtr()) {
+                if (param.type.isInt()) {
+                    std::vector<int32_t> data(static_cast<size_t>(totalThreads));
+                    for (size_t k = 0; k < data.size(); ++k) data[k] = static_cast<int32_t>(k + 1);
+                    buffers.allocateI32(param.name, std::move(data));
+                } else {
+                    std::vector<float> data(static_cast<size_t>(totalThreads));
+                    for (size_t k = 0; k < data.size(); ++k) data[k] = static_cast<float>(k + 1);
+                    buffers.allocateF32(param.name, std::move(data));
+                }
+                args[param.name] = ptxlab::KernelArg::fromBuffer(param.name);
+            } else if (param.type.isInt()) {
+                args[param.name] = ptxlab::KernelArg::fromI32(totalThreads);
+            } else if (param.type.isFloat()) {
+                args[param.name] = ptxlab::KernelArg::fromF32(2.5f);
+            } else if (param.type.isPred()) {
+                args[param.name] = ptxlab::KernelArg::fromBool(true);
+            }
+        }
+
+        ptxlab::ptx::PTXInterpreter interpreter(buffers);
+        auto result = interpreter.launch(ptxCode, func.name(), gridDim, blockDim, args);
+        if (!result.success) {
+            std::cerr << "kcc: [O3 PTX Interpreter ERROR]: " << result.error << "\n";
+            return 1;
+        }
+
+        std::cout << "kcc: [O3 PTX Interpreter] kernel '" << func.name()
+                  << "' executed successfully (" << gridDim << " blocks x " << blockDim << " threads = "
+                  << totalThreads << " total threads) [Cycles: " << result.totalCycles << "]\n";
+
+        for (const auto& param : func.params()) {
+            if (param.type.isPtr()) {
+                std::cout << "  buffer '" << param.name << "' output sample: [";
+                if (param.type.isInt()) {
+                    const auto& b = buffers.getI32(param.name);
+                    size_t count = std::min<size_t>(b.size(), 8);
+                    for (size_t k = 0; k < count; ++k) {
+                        std::cout << b[k] << (k + 1 < count ? ", " : "");
+                    }
+                    if (b.size() > 8) std::cout << ", ...";
+                } else {
+                    const auto& b = buffers.getF32(param.name);
+                    size_t count = std::min<size_t>(b.size(), 8);
+                    for (size_t k = 0; k < count; ++k) {
+                        std::cout << b[k] << (k + 1 < count ? ", " : "");
+                    }
+                    if (b.size() > 8) std::cout << ", ...";
+                }
+                std::cout << "]\n";
+            }
+        }
+        return 0;
+    }
+
+    std::cout << "kcc: verified and lowered '" << inputFile << "' successfully (use --dump-ir, --run-ir, --emit-ptx, --run-ptx, or --run-gpu)\n";
     return 0;
 }

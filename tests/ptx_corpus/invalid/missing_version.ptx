@@ -1,0 +1,6 @@
+.target sm_75
+.address_size 64
+
+.visible .entry missing_version() {
+    ret;
+}

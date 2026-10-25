@@ -1,0 +1,10 @@
+.version 7.0
+.target sm_75
+.address_size 64
+
+.visible .entry duplicate_label() {
+$L_block:
+    ret;
+$L_block:
+    ret;
+}

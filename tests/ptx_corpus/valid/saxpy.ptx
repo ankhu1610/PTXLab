@@ -1,0 +1,48 @@
+.version 7.0
+.target sm_75
+.address_size 64
+
+.visible .entry saxpy(
+    .param .u32 _param_n,
+    .param .f32 _param_a,
+    .param .u64 _param_x,
+    .param .u64 _param_y
+)
+{
+    .reg .b32   %r<10>;
+    .reg .f32   %f<6>;
+    .reg .b64   %rd<6>;
+    .reg .b64   %rd_offset;
+    .reg .pred  %p<2>;
+
+$L_entry:
+    ld.param.u32    %r0, [_param_n];
+    ld.param.f32    %f0, [_param_a];
+    ld.param.u64    %rd0, [_param_x];
+    cvta.to.global.u64 %rd1, %rd0;
+    ld.param.u64    %rd2, [_param_y];
+    cvta.to.global.u64 %rd3, %rd2;
+    mov.u32         %r1, %ctaid.x;
+    mov.u32         %r2, %ntid.x;
+    mul.lo.s32      %r3, %r1, %r2;
+    mov.u32         %r4, %tid.x;
+    add.s32         %r5, %r3, %r4;
+    setp.ge.s32     %p0, %r5, %r0;
+    @%p0 bra        $L_exit;
+    bra             $L_body;
+
+$L_body:
+    mul.wide.s32    %rd_offset, %r5, 4;
+    add.s64         %rd4, %rd1, %rd_offset;
+    ld.global.f32   %f1, [%rd4];
+    mul.rn.f32      %f2, %f0, %f1;
+    mul.wide.s32    %rd_offset, %r5, 4;
+    add.s64         %rd5, %rd3, %rd_offset;
+    ld.global.f32   %f3, [%rd5];
+    add.rn.f32      %f4, %f2, %f3;
+    st.global.f32   [%rd5], %f4;
+    bra             $L_exit;
+
+$L_exit:
+    ret;
+}

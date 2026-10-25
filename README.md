@@ -13,9 +13,10 @@ PTXLab is an end-to-end domain-specific GPU compiler built from first principles
 * **Control Flow Graph (CFG) & Verifier:** First-class basic blocks, explicit branch/conditional jump terminators, bidirectional CFG edge tracking, and an IR Verifier enforcing structural invariants.
 * **PTX Target Code Generation (M5):** Emits NVIDIA PTX 7.0 assembly for `sm_75+` architectures with typed register banking (`%r`, `%f`, `%rd`, `%p`), IEEE 754 `.rn` explicit rounding, and 64-bit wide array indexing.
 * **Physical GPU Execution Engine (M6):** Zero-SDK dynamic loading of `nvcuda.dll` via OS loader APIs, driver-level JIT compilation (`cuModuleLoadDataEx`), and direct hardware execution on physical NVIDIA GPUs (tested on GeForce RTX 5070 Ti `sm_120`).
-* **3-Way Multi-Oracle Differential Testing:** Bit-exact verification between the AST Reference Interpreter (**Oracle O1**), TAC IR Interpreter (**Oracle O2**), and Physical GPU Silicon (**Oracle O4**).
+* **PTX Parser, Validator & Reference Interpreter (M7):** Fully decoupled PTX lexer, recursive-descent parser, ISA conformance validator, and CPU-based virtual execution engine (**Oracle O3**) for testing and debugging PTX independent of physical GPU hardware.
+* **4-Way Multi-Oracle Differential Testing:** Bit-exact verification between AST Reference Interpreter (**Oracle O1**), TAC IR Interpreter (**Oracle O2**), PTX Reference Interpreter (**Oracle O3**), and Physical GPU Silicon (**Oracle O4**).
 * **Safe Undefined Behavior (UB) Traps:** Catches integer division by zero, signed division overflow (`INT_MIN / -1`), out-of-bounds buffer indexing, and invalid bit-shift bounds before they cause GPU memory corruption.
-* **Zero Compiler Warnings:** Maintained under `-Wall -Wextra -Wpedantic -Wconversion` (or `/W4` on MSVC) with 100% test pass rate across 132 unit tests.
+* **Zero Compiler Warnings:** Maintained under `-Wall -Wextra -Wpedantic -Wconversion` (or `/W4` on MSVC) with 100% test pass rate across 146 unit tests.
 
 ---
 
@@ -34,12 +35,14 @@ flowchart TD
     PTXEmitter -->|"PTX Assembly (.ptx)"| GPURunner["GPU Runner (M6)<br/>(CUDA Driver API)"]
     GPURunner --> Hardware["NVIDIA Physical GPU<br/>(RTX 5070 Ti - sm_120)"]
 
-    subgraph Oracles["3-Way Multi-Oracle Differential Testing"]
+    subgraph Oracles["4-Way Multi-Oracle Differential Testing"]
         Sema -.->|"AST"| O1["Oracle O1: AST Interpreter"]
         Verifier -.->|"TAC IR"| O2["Oracle O2: IR Interpreter"]
-        GPURunner -.->|"SASS / Silicon"| O4["Oracle O4: Physical GPU"]
+        PTXEmitter -.->|"PTX Assembly"| O3["Oracle O3: PTX Interpreter (M7)"]
+        GPURunner -.->|"SASS / Silicon"| O4["Oracle O4: Physical GPU (M6)"]
         O1 <===>|"Bit-Exact Parity"| O2
-        O2 <===>|"Bit-Exact Parity"| O4
+        O2 <===>|"Bit-Exact Parity"| O3
+        O3 <===>|"Bit-Exact Parity"| O4
     end
 ```
 
@@ -93,8 +96,8 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 ```text
-100% tests passed out of 132
-Total Test time (real) = 1.97 sec
+100% tests passed out of 146
+Total Test time (real) = 1.68 sec
 ```
 
 ---
@@ -109,7 +112,7 @@ Usage: kcc [options] <input.kc>
 Options:
   -h, --help       Show help message
   -v, --version    Show compiler version
-  -p, --pipeline   Trace full compiler flow (Tokens -> AST -> Sema -> IR -> Run -> PTX -> GPU)
+  -p, --pipeline   Trace full compiler flow (Tokens -> AST -> Sema -> IR -> Run -> PTX -> Parse/Validate/O3 -> GPU)
   --dump-tokens    [M1] Dump lexical token stream
   --dump-ast       [M2] Dump Abstract Syntax Tree (AST)
   --check          [M3] Perform syntax and semantic type check only
@@ -118,6 +121,7 @@ Options:
   --run-ir         [M4] Execute on CPU with TAC IR Reference Interpreter (O2)
   --emit-ptx       [M5] Generate PTX code to stdout or file
   --run-gpu        [M6] Execute on GPU via CUDA Driver API (O4)
+  --run-ptx        [M7] Execute on CPU with PTX Reference Interpreter (O3) (accepts .kc or .ptx)
   -o <file>        Output file for generated PTX (default: stdout)
   --grid <N>       Number of thread blocks to launch (default 1)
   --block <M>      Number of threads per block (default 1)
@@ -274,9 +278,8 @@ PTXLab/
 | **M4** | Typed TAC IR, CFG, Verifier & IR Interpreter (O2) | **DONE** | BasicBlock CFG, jumping code, O1 == O2 parity; 119 unit tests |
 | **M5** | PTX Emitter & Target Generation | **DONE** | PTX 7.0 / sm_75 generator, typed register banks, IEEE .rn, 127 unit tests |
 | **M6** | GPU Runner (O4) via CUDA Driver API | **DONE** | Dynamic nvcuda loader, driver JIT, RTX 5070 Ti execution, 3-way parity (O1==O2==O4), 132 unit tests |
-| **M7** | PTX-subset Parser, Validator & Interpreter (O3) | **NEXT** | Independent validation oracle |
-| **M7** | PTX-subset Parser, Validator & Interpreter (O3) | Pending | Independent validation oracle |
-| **M8** | Data-Flow Analysis & Optimizations (CP, DCE, CSE)| Pending | Optimization pipeline |
+| **M7** | PTX-subset Parser, Validator & Interpreter (O3) | **DONE** | Standalone PTX parser, validator, CPU reference interpreter (O3), 4-way parity (O1==O2==O3==O4), 146 unit tests |
+| **M8** | Data-Flow Analysis & Optimizations (CP, DCE, CSE)| **NEXT** | Optimization pipeline |
 | **M9** | Multi-Oracle Differential Testing (`ptxdiff`) | Pending | Automated fuzzer and oracle comparison |
 | **M10**| Fuzz Generator & Mutation Testing | Pending | Random program generator and bug minimizer |
 | **M11**| Performance Evaluation & Final Presentation | Pending | Benchmarks against native CUDA `nvcc` |
