@@ -11,9 +11,11 @@ PTXLab is an end-to-end domain-specific GPU compiler built from first principles
 * **Pure First-Principles Design:** Handcrafted Deterministic Finite Automaton (DFA) Lexer, Precedence-Climbing Recursive Descent Parser, and Typed Three-Address Code (TAC) IR.
 * **Rigorous Safety & Type System:** Scoped symbol resolution with zero implicit type coercions—all casts (`i32(...)`, `f32(...)`) must be explicit.
 * **Control Flow Graph (CFG) & Verifier:** First-class basic blocks, explicit branch/conditional jump terminators, bidirectional CFG edge tracking, and an IR Verifier enforcing structural invariants.
-* **Multi-Oracle Differential Testing:** Bit-exact verification between the AST Reference Interpreter (**Oracle O1**) and the TAC IR Interpreter (**Oracle O2**).
+* **PTX Target Code Generation (M5):** Emits NVIDIA PTX 7.0 assembly for `sm_75+` architectures with typed register banking (`%r`, `%f`, `%rd`, `%p`), IEEE 754 `.rn` explicit rounding, and 64-bit wide array indexing.
+* **Physical GPU Execution Engine (M6):** Zero-SDK dynamic loading of `nvcuda.dll` via OS loader APIs, driver-level JIT compilation (`cuModuleLoadDataEx`), and direct hardware execution on physical NVIDIA GPUs (tested on GeForce RTX 5070 Ti `sm_120`).
+* **3-Way Multi-Oracle Differential Testing:** Bit-exact verification between the AST Reference Interpreter (**Oracle O1**), TAC IR Interpreter (**Oracle O2**), and Physical GPU Silicon (**Oracle O4**).
 * **Safe Undefined Behavior (UB) Traps:** Catches integer division by zero, signed division overflow (`INT_MIN / -1`), out-of-bounds buffer indexing, and invalid bit-shift bounds before they cause GPU memory corruption.
-* **Zero Compiler Warnings:** Maintained under `-Wall -Wextra -Wpedantic -Wconversion` (or `/W4` on MSVC) with 100% test pass rate across 119 unit tests.
+* **Zero Compiler Warnings:** Maintained under `-Wall -Wextra -Wpedantic -Wconversion` (or `/W4` on MSVC) with 100% test pass rate across 132 unit tests.
 
 ---
 
@@ -28,15 +30,17 @@ flowchart TD
     Parser -->|"AST"| Sema["Semantic Analyzer<br/>(Types & Scopes)"]
     Sema -->|"Checked AST"| Lowering["AST-to-IR Lowering<br/>(Jumping Code)"]
     Lowering -->|"TAC IR & CFG"| Verifier["IR Verifier<br/>(Structural Invariants)"]
-    
-    subgraph Oracles["Multi-Oracle Execution Engines"]
+    Verifier -->|"Verified IR"| PTXEmitter["PTX Emitter (M5)<br/>(Register Banks & ABI)"]
+    PTXEmitter -->|"PTX Assembly (.ptx)"| GPURunner["GPU Runner (M6)<br/>(CUDA Driver API)"]
+    GPURunner --> Hardware["NVIDIA Physical GPU<br/>(RTX 5070 Ti - sm_120)"]
+
+    subgraph Oracles["3-Way Multi-Oracle Differential Testing"]
         Sema -.->|"AST"| O1["Oracle O1: AST Interpreter"]
         Verifier -.->|"TAC IR"| O2["Oracle O2: IR Interpreter"]
-        O1 <===>|"Differential Parity Check (Bit-Exact)"| O2
+        GPURunner -.->|"SASS / Silicon"| O4["Oracle O4: Physical GPU"]
+        O1 <===>|"Bit-Exact Parity"| O2
+        O2 <===>|"Bit-Exact Parity"| O4
     end
-
-    Verifier -->|"Verified IR"| PTXEmitter["PTX Emitter (M5)<br/>(Register Allocation)"]
-    PTXEmitter --> Target["NVIDIA PTX Assembly (.ptx)"]
 ```
 
 ---
